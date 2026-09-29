@@ -1,0 +1,24 @@
+SRI SIVA SAI SEEDS
+AgriFlow Financial Desk
+INVOICE RECEIPT
+Invoice Number:
+SP-20260928-94584D0D
+Status:
+COMPLETED
+Transaction Type:
+Seed Purchase
+Date & Time:
+28 Sep 2026, 02:35 PM
+Farmer / Account:
+Ramesh Patel
+Phone:
++91 98765 43210
+Reference ID:
+SP-ORDER-2026-0917
+Direction:
+Credit (Inflow)
+Amount:
+₹8,500
+Description:
+Mustard seed lot settlement for Rabi season
+Generated from AgriFlow transaction record.

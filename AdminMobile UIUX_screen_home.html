@@ -1,0 +1,166 @@
+<section class="screen active" id="screen-home">
+            <div class="section-pad" style="padding-top:6px; display:flex; flex-direction:column; gap:20px;">
+
+              <div>
+                <div class="eyebrow" id="home-date-eyebrow">Sri Siva Sai Seeds · Kurnool Zone</div>
+                <div class="display" style="font-size:22px; font-weight:600; margin-top:2px;" id="home-greeting">Good Morning, Admin 👋</div>
+                <div style="font-size:12.5px; color:var(--text-muted); margin-top:4px;">Here's what's happening across your operations today.</div>
+              </div>
+
+              <!-- summary strip -->
+              <div class="card" style="padding:14px 16px; display:flex; align-items:center; gap:14px; background:linear-gradient(120deg,#16293F,#1E3A5C); border:none; color:#EEF3F9;">
+                <div style="width:44px;height:44px;border-radius:14px;background:rgba(255,255,255,0.14);display:flex;align-items:center;justify-content:center;">
+                  <svg style="width:24px;height:24px;stroke:#EEF3F9;fill:none;stroke-width:1.6"><use href="#i-chart" /></svg>
+                </div>
+                <div style="flex:1;" id="home-summary-strip"></div>
+              </div>
+
+              <!-- stat grid -->
+              <div class="stat-grid">
+                <div class="stat-card card" data-nav="seed-purchase">
+                  <div class="stat-icon" style="background:#ECF5FD;"><svg style="stroke:#0369A1;"><use href="#i-cart" /></svg></div>
+                  <div class="stat-val" id="stat-seed-pending">–</div>
+                  <div class="stat-label">Pending seed orders</div>
+                  <div class="stat-delta" style="color:#28653F;" id="stat-seed-delta"></div>
+                </div>
+                <div class="stat-card card" data-nav="booking-slot">
+                  <div class="stat-icon" style="background:#F0F8EC;"><svg style="stroke:var(--canopy-deep);"><use href="#i-calendar" /></svg></div>
+                  <div class="stat-val" id="stat-slot-booked">–</div>
+                  <div class="stat-label">Bookings today</div>
+                  <div class="stat-delta" style="color:var(--text-muted);" id="stat-slot-delta"></div>
+                </div>
+                <div class="stat-card card" data-nav="farm-visits">
+                  <div class="stat-icon" style="background:#FDF5EC;"><svg style="stroke:var(--amber);"><use href="#i-pin" /></svg></div>
+                  <div class="stat-val" id="stat-visits-today">–</div>
+                  <div class="stat-label">Farm visits today</div>
+                  <div class="stat-delta" style="color:var(--text-muted);" id="stat-visits-delta"></div>
+                </div>
+                <div class="stat-card card" data-nav="grain-sales">
+                  <div class="stat-icon" style="background:#F4F2F7;"><svg style="stroke:#6B4C9A;"><use href="#i-store" /></svg></div>
+                  <div class="stat-val" id="stat-sales-today">–</div>
+                  <div class="stat-label">Grain sales today</div>
+                  <div class="stat-delta" style="color:#28653F;" id="stat-sales-delta"></div>
+                </div>
+              </div>
+
+              <!-- system overview -->
+              <div>
+                <div class="h-row" style="margin-bottom:10px;">
+                  <div style="font-size:15px; font-weight:800;">System Overview</div>
+                  <span class="pill good" id="system-status-pill">● All Systems Operational</span>
+                </div>
+                <div class="stat-grid">
+                  <div class="stat-card card" data-nav="all-farmers">
+                    <div class="stat-icon" style="background:#ECF5FD;"><svg style="stroke:#0369A1;"><use href="#i-users" /></svg></div>
+                    <div class="stat-val" id="stat-total-farmers">–</div>
+                    <div class="stat-label">Total Farmers</div>
+                  </div>
+                  <div class="stat-card card" data-nav="managers">
+                    <div class="stat-icon" style="background:#FDF3E5;"><svg style="stroke:var(--amber);"><use href="#i-shield" /></svg></div>
+                    <div class="stat-val" id="stat-total-managers">–</div>
+                    <div class="stat-label">System Managers</div>
+                  </div>
+                  <div class="stat-card card" data-nav="farm-visits">
+                    <div class="stat-icon" style="background:#F0F8EC;"><svg style="stroke:var(--canopy-deep);"><use href="#i-pin" /></svg></div>
+                    <div class="stat-val" id="stat-total-visits">–</div>
+                    <div class="stat-label">Farm Visits Recorded</div>
+                  </div>
+                  <div class="stat-card card" data-nav="warehouse">
+                    <div class="stat-icon" style="background:#F4F2F7;"><svg style="stroke:#6B4C9A;"><use href="#i-warehouse" /></svg></div>
+                    <div class="stat-val" id="stat-total-warehouses">–</div>
+                    <div class="stat-label">Active Warehouses</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- quick actions -->
+              <div>
+                <div style="font-size:15px; font-weight:800; margin-bottom:10px;">Quick Actions</div>
+                <div class="qa-grid">
+                  <button class="qa" data-nav="seed-purchase">
+                    <div class="qa-ic" style="background:#ECF5FD;"><svg style="width:22px;height:22px;stroke:#0369A1;fill:none;stroke-width:2"><use href="#i-cart" /></svg></div>
+                    <span class="qa-lbl">Seed Requests</span>
+                  </button>
+                  <button class="qa" data-nav="farm-visits">
+                    <div class="qa-ic" style="background:#FDF5EC;"><svg style="width:22px;height:22px;stroke:var(--amber);fill:none;stroke-width:2"><use href="#i-pin" /></svg></div>
+                    <span class="qa-lbl">Farm Visits</span>
+                  </button>
+                  <button class="qa" data-nav="grain-sales">
+                    <div class="qa-ic" style="background:#F4F2F7;"><svg style="width:22px;height:22px;stroke:#6B4C9A;fill:none;stroke-width:2"><use href="#i-store" /></svg></div>
+                    <span class="qa-lbl">Grain Sales</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- more tools (Operational + Super Admin portal) -->
+              <div>
+                <div style="font-size:15px; font-weight:800; margin-bottom:10px;">More Tools</div>
+                <div class="qa-grid" style="grid-template-columns: repeat(4, 1fr);">
+                  <button class="qa" data-nav="seeds-inventory">
+                    <div class="qa-ic" style="background:#ECF5FD;"><svg style="width:22px;height:22px;stroke:#0369A1;fill:none;stroke-width:2"><use href="#i-box" /></svg></div>
+                    <span class="qa-lbl">Inventory</span>
+                  </button>
+                  <button class="qa" data-nav="warehouse">
+                    <div class="qa-ic" style="background:#F4F2F7;"><svg style="width:22px;height:22px;stroke:#6B4C9A;fill:none;stroke-width:2"><use href="#i-warehouse" /></svg></div>
+                    <span class="qa-lbl">Warehouse</span>
+                  </button>
+                  <button class="qa" data-nav="billing">
+                    <div class="qa-ic" style="background:#F0F8EC;"><svg style="width:22px;height:22px;stroke:var(--canopy-deep);fill:none;stroke-width:2"><use href="#i-dollar" /></svg></div>
+                    <span class="qa-lbl">Billing</span>
+                  </button>
+                  <button class="qa" data-nav="market-rates">
+                    <div class="qa-ic" style="background:#FDF5EC;"><svg style="width:22px;height:22px;stroke:var(--amber);fill:none;stroke-width:2"><use href="#i-trend" /></svg></div>
+                    <span class="qa-lbl">Market Rates</span>
+                  </button>
+                  <button class="qa" data-nav="reports">
+                    <div class="qa-ic" style="background:#ECF5FD;"><svg style="width:22px;height:22px;stroke:#0369A1;fill:none;stroke-width:2"><use href="#i-chart" /></svg></div>
+                    <span class="qa-lbl">Reports</span>
+                  </button>
+                  <button class="qa" data-nav="event-logs">
+                    <div class="qa-ic" style="background:#F4F2F7;"><svg style="width:22px;height:22px;stroke:#6B4C9A;fill:none;stroke-width:2"><use href="#i-clipboard" /></svg></div>
+                    <span class="qa-lbl">Event Logs</span>
+                  </button>
+                  <button class="qa" data-nav="managers">
+                    <div class="qa-ic" style="background:#FDF3E5;"><svg style="width:22px;height:22px;stroke:var(--amber);fill:none;stroke-width:2"><use href="#i-shield" /></svg></div>
+                    <span class="qa-lbl">Managers</span>
+                  </button>
+                  <button class="qa" data-nav="all-farmers">
+                    <div class="qa-ic" style="background:#F0F8EC;"><svg style="width:22px;height:22px;stroke:var(--canopy-deep);fill:none;stroke-width:2"><use href="#i-users" /></svg></div>
+                    <span class="qa-lbl">All Farmers</span>
+                  </button>
+                  <button class="qa" data-nav="credits">
+                    <div class="qa-ic" style="background:#ECF5FD;"><svg style="width:22px;height:22px;stroke:#0369A1;fill:none;stroke-width:2"><use href="#i-dollar" /></svg></div>
+                    <span class="qa-lbl">Credits</span>
+                  </button>
+                  <button class="qa" data-nav="cache-management">
+                    <div class="qa-ic" style="background:#F4F2F7;"><svg style="width:22px;height:22px;stroke:#6B4C9A;fill:none;stroke-width:2"><use href="#i-database" /></svg></div>
+                    <span class="qa-lbl">Cache</span>
+                  </button>
+                </div>
+              </div>
+
+
+              <div>
+                <div class="h-row" style="margin-bottom:12px;">
+                  <div style="font-size:15px; font-weight:800;">Today's Mandi Prices</div>
+                  <div style="font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:4px; font-weight:700;" id="mandi-updated-at">Updated —</div>
+                </div>
+                <div class="hscroll" id="home-mandi-strip" style="margin:0 -22px 0; padding:0 22px;"></div>
+              </div>
+
+              <!-- Recent activity -->
+              <div>
+                <div class="h-row" style="margin-bottom:12px;">
+                  <div style="font-size:15px; font-weight:800;">Recent Activity</div>
+                  <a data-nav="notifications" style="font-size:12px; font-weight:700; color:var(--admin-navy); display:flex; align-items:center; gap:2px;">View all <svg style="width:13px;height:13px;stroke:var(--admin-navy);fill:none;stroke-width:2"><use href="#i-chevron-r" /></svg></a>
+                </div>
+                <div id="activity-list" style="display:flex; flex-direction:column; gap:10px;"></div>
+              </div>
+
+            </div>
+          </section>
+
+          <!-- =========================================================== -->
+          <!-- SEED PURCHASE (footer tab) -->
+          <!-- =========================================================== -->
+          <section class="screen" 
