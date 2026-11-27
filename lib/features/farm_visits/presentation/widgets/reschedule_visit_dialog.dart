@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/app_date_picker.dart';
 import '../../domain/entities/farm_visit_item.dart';
 
 class RescheduleVisitDialog extends StatefulWidget {
@@ -51,11 +52,12 @@ class _RescheduleVisitDialogState extends State<RescheduleVisitDialog> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 30)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Select new visit date',
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);

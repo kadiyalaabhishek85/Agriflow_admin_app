@@ -8,11 +8,16 @@ import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_purch
 void main() {
   group('ErrorSanitizer Tests (ISSUE-P2-02)', () {
     test('Maps SocketException and network errors to clean user message', () {
-      const socketEx = SocketException('Failed host lookup: agriflow-backend-t8o4.onrender.com');
+      const socketEx = SocketException('Failed host lookup: agriflow-backend-760e.onrender.com');
       final msg = ErrorSanitizer.sanitize(socketEx);
       expect(msg, 'Unable to connect. Please check your internet connection.');
       expect(msg, isNot(contains('SocketException')));
-      expect(msg, isNot(contains('agriflow-backend-t8o4')));
+      expect(msg, isNot(contains('agriflow-backend-760e')));
+    });
+
+    test('Maps TimeoutException to slow backend user message', () {
+      final msg = ErrorSanitizer.sanitize('TimeoutException after 25s');
+      expect(msg, 'The server is taking too long to respond. Please check your connection and try again.');
     });
 
     test('Maps 401 / unauthorized to session expired message', () {

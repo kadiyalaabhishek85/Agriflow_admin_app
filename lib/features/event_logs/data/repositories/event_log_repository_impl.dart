@@ -18,6 +18,7 @@ class EventLogRepositoryImpl implements EventLogRepository {
     int page = 1,
     int pageSize = 20,
     String? search,
+    String? role,
     String? sort,
     String? order,
   }) {
@@ -26,6 +27,7 @@ class EventLogRepositoryImpl implements EventLogRepository {
       page: page,
       pageSize: pageSize,
       search: search,
+      role: role,
       sort: sort,
       order: order,
     );

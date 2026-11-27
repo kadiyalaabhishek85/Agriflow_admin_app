@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:agriflow_admin/features/farmers/data/farmer_lookup_service.dart';
 import '../../domain/entities/farm_visit_exception.dart';
@@ -74,12 +75,54 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FarmVisitRemoteDataSourceImpl({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _send(
+    String method,
+    String path, {
+    required String accessToken,
+    Map<String, dynamic>? queryParams,
+    Object? body,
+    Duration timeout = const Duration(seconds: 25),
+  }) async {
+    final uri = _uri(path, queryParams);
+    try {
+      final authClient = apiClient;
+      if (authClient != null) {
+        switch (method) {
+          case 'GET':
+            return await authClient.get(uri, timeout: timeout);
+          case 'POST':
+            return await authClient.post(uri, body: body, timeout: timeout);
+          case 'PATCH':
+            return await authClient.patch(uri, body: body, timeout: timeout);
+        }
+      }
+      final headers = _buildHeaders(accessToken);
+      switch (method) {
+        case 'GET':
+          return await client.get(uri, headers: headers).timeout(timeout);
+        case 'POST':
+          return await client.post(uri, headers: headers, body: body).timeout(timeout);
+        case 'PATCH':
+          return await client.patch(uri, headers: headers, body: body).timeout(timeout);
+        default:
+          throw UnsupportedError('Unsupported HTTP method: $method');
+      }
+    } on AuthException catch (e) {
+      if (e.isNetworkError) {
+        throw FarmVisitNetworkException(e.message);
+      }
+      throw FarmVisitAuthException(e.message);
+    }
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParams]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -153,8 +196,12 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
         queryParams['status'] = status.trim().toLowerCase();
       }
 
-      final uri = _uri('/farm-visits', queryParams);
-      final response = await client.get(uri, headers: _buildHeaders(accessToken)).timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/farm-visits',
+        accessToken: accessToken,
+        queryParams: queryParams,
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -206,16 +253,16 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     String? staffId,
   }) async {
     try {
-      final uri = _uri('/farm-visits/$visitId/schedule');
       final body = <String, dynamic>{};
       if (scheduledDate != null) body['scheduled_date'] = scheduledDate;
       if (staffId != null) body['staff_id'] = staffId;
 
-      final response = await client.patch(
-        uri,
-        headers: _buildHeaders(accessToken),
+      final response = await _send(
+        'PATCH',
+        '/farm-visits/$visitId/schedule',
+        accessToken: accessToken,
         body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -252,7 +299,6 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     String? recommendation,
   }) async {
     try {
-      final uri = _uri('/farm-visits/$visitId/complete');
       final body = <String, dynamic>{
         'verified_acres': verifiedAcres,
         'report': report,
@@ -264,11 +310,12 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
         body['recommendation'] = recommendation.trim();
       }
 
-      final response = await client.patch(
-        uri,
-        headers: _buildHeaders(accessToken),
+      final response = await _send(
+        'PATCH',
+        '/farm-visits/$visitId/complete',
+        accessToken: accessToken,
         body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -304,7 +351,6 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     String? staffId,
   }) async {
     try {
-      final uri = _uri('/farm-visits');
       final body = <String, dynamic>{
         'crop_id': cropId,
         'visit_month': visitMonth,
@@ -314,11 +360,12 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
         body['staff_id'] = staffId;
       }
 
-      final response = await client.post(
-        uri,
-        headers: _buildHeaders(accessToken),
+      final response = await _send(
+        'POST',
+        '/farm-visits',
+        accessToken: accessToken,
         body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
@@ -351,12 +398,13 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     int daysAhead = 2,
   }) async {
     try {
-      final uri = _uri('/farm-visits/reminders', {'days_ahead': '$daysAhead'});
-      final response = await client.post(
-        uri,
-        headers: _buildHeaders(accessToken),
+      final response = await _send(
+        'POST',
+        '/farm-visits/reminders',
+        accessToken: accessToken,
+        queryParams: {'days_ahead': '$daysAhead'},
         body: jsonEncode(const <String, dynamic>{}),
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         try {
@@ -394,8 +442,9 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     required String accessToken,
   }) async {
     try {
+      final token = (await apiClient?.localDataSource.getAccessToken()) ?? accessToken;
       return await FarmerLookupService.fetch(
-        accessToken: accessToken,
+        accessToken: token,
         baseUrl: baseUrl,
         apiPrefix: apiPrefix,
         client: client,
@@ -410,8 +459,12 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     required String accessToken,
   }) async {
     try {
-      final uri = _uri('/crops', {'page': '1', 'page_size': '100'});
-      final response = await client.get(uri, headers: _buildHeaders(accessToken)).timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/crops',
+        accessToken: accessToken,
+        queryParams: {'page': '1', 'page_size': '100'},
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -443,8 +496,12 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     required String accessToken,
   }) async {
     try {
-      final uri = _uri('/managers', {'page': '1', 'page_size': '100'});
-      final response = await client.get(uri, headers: _buildHeaders(accessToken)).timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/managers',
+        accessToken: accessToken,
+        queryParams: {'page': '1', 'page_size': '100'},
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -479,8 +536,9 @@ class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
     String contentType = 'image/jpeg',
   }) async {
     try {
+      final token = (await apiClient?.localDataSource.getAccessToken()) ?? accessToken;
       final request = http.MultipartRequest('POST', _uri('/uploads'));
-      request.headers['Authorization'] = 'Bearer $accessToken';
+      request.headers['Authorization'] = 'Bearer $token';
       request.fields['bucket'] = 'visits';
       request.files.add(http.MultipartFile.fromBytes(
         'file',

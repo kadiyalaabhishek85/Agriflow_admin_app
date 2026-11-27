@@ -17,12 +17,33 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiManagerDashboardRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _get(
+    String path, {
+    required String accessToken,
+    Duration timeout = const Duration(seconds: 15),
+    bool authenticated = true,
+  }) async {
+    final uri = _uri(path);
+    final authClient = apiClient;
+    if (authenticated && authClient != null) {
+      return authClient.get(uri, timeout: timeout);
+    }
+    return client
+        .get(
+          uri,
+          headers: authenticated ? _headers(token: accessToken) : null,
+        )
+        .timeout(timeout);
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParams]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -51,9 +72,7 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
 
       // 1. Seed Purchases
       try {
-        final seedRes = await client
-            .get(_uri('/seed-purchases'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 10));
+        final seedRes = await _get('/seed-purchases', accessToken: accessToken);
         if (seedRes.statusCode == 200) {
           final sJson = jsonDecode(seedRes.body);
           final items = (sJson['data'] is List) ? sJson['data'] as List : [];
@@ -77,9 +96,7 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
 
       // 2. Bookings
       try {
-        final bookRes = await client
-            .get(_uri('/bookings'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 10));
+        final bookRes = await _get('/bookings', accessToken: accessToken);
         if (bookRes.statusCode == 200) {
           final bJson = jsonDecode(bookRes.body);
           if (bJson['pagination'] != null && bJson['pagination']['total'] != null) {
@@ -92,9 +109,7 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
 
       // 3. Farm Visits
       try {
-        final visitRes = await client
-            .get(_uri('/farm-visits'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 10));
+        final visitRes = await _get('/farm-visits', accessToken: accessToken);
         if (visitRes.statusCode == 200) {
           final vJson = jsonDecode(visitRes.body);
           final items = (vJson['data'] is List) ? vJson['data'] as List : [];
@@ -105,9 +120,7 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
 
       // 4. Grain Sales
       try {
-        final saleRes = await client
-            .get(_uri('/grain-sales'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 10));
+        final saleRes = await _get('/grain-sales', accessToken: accessToken);
         if (saleRes.statusCode == 200) {
           final gJson = jsonDecode(saleRes.body);
           if (gJson['pagination'] != null && gJson['pagination']['total'] != null) {
@@ -120,9 +133,11 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
 
       // 5. Try /admin/dashboard for precise aggregated values if permitted
       try {
-        final dashRes = await client
-            .get(_uri('/admin/dashboard'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 6));
+        final dashRes = await _get(
+          '/admin/dashboard',
+          accessToken: accessToken,
+          timeout: const Duration(seconds: 10),
+        );
         if (dashRes.statusCode == 200) {
           final dJson = jsonDecode(dashRes.body);
           final d = dJson['data'] as Map<String, dynamic>? ?? dJson;
@@ -136,9 +151,12 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
       // 6. Mandi Rates
       List<MandiRateItem> mandiRates = [];
       try {
-        final ratesRes = await client
-            .get(_uri('/public/market-rates'))
-            .timeout(const Duration(seconds: 8));
+        final ratesRes = await _get(
+          '/public/market-rates',
+          accessToken: accessToken,
+          timeout: const Duration(seconds: 10),
+          authenticated: false,
+        );
         if (ratesRes.statusCode == 200) {
           final rJson = jsonDecode(ratesRes.body);
           final list = (rJson is Map && rJson['data'] is List)
@@ -153,9 +171,11 @@ class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteD
       // 7. Recent Notifications
       List<ManagerNotificationItem> notifications = [];
       try {
-        final notifRes = await client
-            .get(_uri('/notifications'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 8));
+        final notifRes = await _get(
+          '/notifications',
+          accessToken: accessToken,
+          timeout: const Duration(seconds: 10),
+        );
         if (notifRes.statusCode == 200) {
           final nJson = jsonDecode(notifRes.body);
           final list = (nJson['data'] is List) ? nJson['data'] as List : [];

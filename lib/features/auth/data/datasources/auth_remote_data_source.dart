@@ -62,9 +62,9 @@ class FastApiAuthRemoteDataSource implements AuthRemoteDataSource {
               'password': password,
             }),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 25));
 
-      final json = _parseResponse(response);
+      final json = _parseResponse(response, isLogin: true);
       final data = json['data'] as Map<String, dynamic>? ?? json;
       return AuthSession.fromJson(data);
     } on SocketException catch (_) {
@@ -74,7 +74,7 @@ class FastApiAuthRemoteDataSource implements AuthRemoteDataSource {
       );
     } on TimeoutException catch (_) {
       throw const AuthException(
-        message: 'Server request timed out. Please try again later.',
+        message: 'The server is taking too long to respond. Please try again.',
         isNetworkError: true,
       );
     }
@@ -188,13 +188,18 @@ class FastApiAuthRemoteDataSource implements AuthRemoteDataSource {
       _parseResponse(response);
     } on SocketException catch (_) {
       throw const AuthException(
-        message: 'Network connection unavailable.',
+        message: 'Network connection unavailable. Please check your internet connection.',
+        isNetworkError: true,
+      );
+    } on TimeoutException catch (_) {
+      throw const AuthException(
+        message: 'The server is taking too long to respond. Please try again.',
         isNetworkError: true,
       );
     }
   }
 
-  Map<String, dynamic> _parseResponse(http.Response response) {
+  Map<String, dynamic> _parseResponse(http.Response response, {bool isLogin = false}) {
     Map<String, dynamic> json;
     try {
       json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -213,7 +218,9 @@ class FastApiAuthRemoteDataSource implements AuthRemoteDataSource {
     }
 
     // Parse FastAPI error response
-    String errorMessage = 'Authentication failed. Please try again.';
+    String errorMessage = isLogin && response.statusCode == 401
+        ? 'Invalid phone number or password.'
+        : 'Authentication failed. Please try again.';
     String? errorCode;
 
     if (json.containsKey('error') && json['error'] is Map) {

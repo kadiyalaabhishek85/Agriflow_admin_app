@@ -53,6 +53,9 @@ class FarmVisitController extends ChangeNotifier {
   bool _isLoadingMore = false;
   bool get isLoadingMore => _isLoadingMore;
 
+  bool _isSubmitting = false;
+  bool get isSubmitting => _isSubmitting;
+
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
@@ -298,14 +301,15 @@ class FarmVisitController extends ChangeNotifier {
     }
   }
 
-  /// Authoritatively creates a new farm visit.
+  /// Authoritatively creates a new farm visit without tearing down the
+  /// already-loaded visits list behind the modal sheet on validation errors.
   Future<bool> createVisit({
     required String cropId,
     required int visitMonth,
     required String scheduledDate,
     String? staffId,
   }) async {
-    _status = FarmVisitViewStatus.loading;
+    _isSubmitting = true;
     _errorMessage = null;
     notifyListeners();
 
@@ -320,14 +324,13 @@ class FarmVisitController extends ChangeNotifier {
       await loadVisits();
       return true;
     } on FarmVisitException catch (e) {
-      _status = FarmVisitViewStatus.error;
       _errorMessage = e.message;
       return false;
     } catch (e) {
-      _status = FarmVisitViewStatus.error;
       _errorMessage = ErrorSanitizer.sanitize(e, defaultAction: 'Creating visit');
       return false;
     } finally {
+      _isSubmitting = false;
       notifyListeners();
     }
   }

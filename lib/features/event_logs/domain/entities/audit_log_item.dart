@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 class AuditLogItem {
   final String id;
   final String? userId;
+  final String? actorName;
+  final String? actorRole;
   final String action;
   final String? entityType;
   final String? entityId;
@@ -18,6 +20,8 @@ class AuditLogItem {
   const AuditLogItem({
     required this.id,
     required this.userId,
+    this.actorName,
+    this.actorRole,
     required this.action,
     required this.entityType,
     required this.entityId,
@@ -31,6 +35,8 @@ class AuditLogItem {
     return AuditLogItem(
       id: (json['id'] as String?) ?? '',
       userId: json['user_id'] as String?,
+      actorName: json['actor_name'] as String?,
+      actorRole: json['actor_role'] as String?,
       action: (json['action'] as String?) ?? '',
       entityType: json['entity_type'] as String?,
       entityId: json['entity_id'] as String?,
@@ -48,6 +54,8 @@ class AuditLogItem {
   Map<String, dynamic> toJson() => {
         'id': id,
         'user_id': userId,
+        'actor_name': actorName,
+        'actor_role': actorRole,
         'action': action,
         'entity_type': entityType,
         'entity_id': entityId,

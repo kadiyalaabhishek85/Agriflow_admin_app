@@ -105,6 +105,7 @@ class NotificationEventStream {
   Completer<void>? _stopSignal;
   StreamSubscription? _liveSub;
   Future<void>? _loopFuture;
+  bool _lastTicketFailed = false;
 
   NotificationEventStream({
     required this.dataSource,
@@ -172,12 +173,23 @@ class NotificationEventStream {
         }
         if (!_active || _disposed || epoch != _epoch) break;
         failures++;
+        final isServerOrCorsError = lower.contains('500') ||
+            lower.contains('502') ||
+            lower.contains('503') ||
+            lower.contains('xmlhttprequest error') ||
+            lower.contains('clientexception');
+        if (isServerOrCorsError && (_lastTicketFailed || failures >= 3)) {
+          // Stop SSE retries cleanly when /events/ticket or CORS fails;
+          // REST polling continues to refresh notifications cleanly.
+          stop();
+          break;
+        }
       }
       if (!_active || _disposed || epoch != _epoch) break;
 
       final delaySeconds = failures == 0
           ? math.max(1, reconnectDelay.inSeconds)
-          : math.min(30, 2 * failures);
+          : math.min(60, 2 * (1 << math.min(failures - 1, 5)));
       final completer = Completer<void>();
       _backoffCompleter = completer;
       _backoffTimer = Timer(Duration(seconds: delaySeconds), () {
@@ -201,7 +213,9 @@ class NotificationEventStream {
   /// Opens one SSE connection and processes frames until the stream ends,
   /// errors, idles out, or [stop] is called.
   Future<void> _connectOnce(int epoch) async {
+    _lastTicketFailed = true;
     final ticket = await dataSource.getStreamTicket(accessToken: accessToken);
+    _lastTicketFailed = false;
     if (!_active || _disposed || epoch != _epoch) return;
     if (ticket.isEmpty) {
       throw StateError('Empty stream ticket');

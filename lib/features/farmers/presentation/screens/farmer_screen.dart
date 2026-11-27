@@ -317,6 +317,16 @@ class _FarmerScreenState extends State<FarmerScreen> {
                 // Status Filter Chips
                 _buildFilterChips(ctrl),
 
+                if (ctrl.isLoading && ctrl.farmers.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: LinearProgressIndicator(
+                      minHeight: 2.5,
+                      color: AppColors.canopy,
+                      backgroundColor: AppColors.surfaceAlt,
+                    ),
+                  ),
+
                 // Error Banner if list has items but last action errored
                 if (ctrl.errorMessage != null && ctrl.farmers.isNotEmpty) ...[
                   _buildErrorBanner(ctrl.errorMessage!),
@@ -563,41 +573,62 @@ class _FarmerScreenState extends State<FarmerScreen> {
       if (!widget.isManagerRole) 'suspended',
     ];
 
-    return SizedBox(
-      height: 40,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        itemCount: filters.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final filter = filters[index];
-          final isSelected = ctrl.currentFilter == filter;
-          final title = filter == 'all' ? 'All' : filter[0].toUpperCase() + filter.substring(1);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) => FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < filters.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                _buildSingleFilterChip(
+                  filter: filters[i],
+                  isSelected: ctrl.currentFilter == filters[i],
+                  onTap: () => ctrl.setFilter(filters[i]),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-          return ChoiceChip(
-            label: Text(
-              title,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                color: isSelected ? Colors.white : AppColors.textMuted,
-              ),
+  Widget _buildSingleFilterChip({
+    required String filter,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    final title =
+        filter == 'all' ? 'All' : filter[0].toUpperCase() + filter.substring(1);
+
+    return Material(
+      color: isSelected ? AppColors.forest : AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        key: Key('farmer_filter_$filter'),
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isSelected ? AppColors.forest : AppColors.line,
             ),
-            selected: isSelected,
-            onSelected: (_) => ctrl.setFilter(filter),
-            selectedColor: AppColors.forest,
-            backgroundColor: AppColors.surface,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-              side: BorderSide(
-                color: isSelected ? AppColors.forest : AppColors.line,
-              ),
+          ),
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              color: isSelected ? Colors.white : AppColors.textMuted,
             ),
-            showCheckmark: false,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          );
-        },
+          ),
+        ),
       ),
     );
   }

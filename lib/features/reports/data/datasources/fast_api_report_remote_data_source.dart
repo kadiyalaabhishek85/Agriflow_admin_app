@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 
 import '../../domain/entities/monthly_report.dart';
 import '../../domain/entities/reports_exception.dart';
@@ -11,7 +12,7 @@ import 'report_remote_data_source.dart';
 
 /// FastAPI implementation of ReportRemoteDataSource.
 ///
-/// Verified endpoint (live OpenAPI, re-verified 2026-09-28):
+/// Verified endpoint:
 /// - `GET /api/v1/admin/reports/monthly?month=YYYY-MM` → MonthlyReportResponse
 class FastApiReportRemoteDataSource implements ReportRemoteDataSource {
   static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
@@ -19,10 +20,12 @@ class FastApiReportRemoteDataSource implements ReportRemoteDataSource {
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiReportRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
 
@@ -97,12 +100,20 @@ class FastApiReportRemoteDataSource implements ReportRemoteDataSource {
     required String month,
   }) {
     return _guard(() async {
-      final response = await client
-          .get(
-            _uri('/admin/reports/monthly', {'month': month}),
-            headers: _headers(accessToken),
-          )
-          .timeout(const Duration(seconds: 15));
+      final uri = _uri('/admin/reports/monthly', {'month': month});
+      final http.Response response;
+      try {
+        final authClient = apiClient;
+        if (authClient != null) {
+          response = await authClient.get(uri, timeout: const Duration(seconds: 25));
+        } else {
+          response = await client
+              .get(uri, headers: _headers(accessToken))
+              .timeout(const Duration(seconds: 25));
+        }
+      } on AuthException catch (e) {
+        throw ReportsUnauthorizedException(message: e.message);
+      }
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;

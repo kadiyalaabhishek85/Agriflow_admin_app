@@ -82,7 +82,7 @@ class _AuthRouterState extends State<AuthRouter> {
     if (widget.localDataSource != null) {
       _apiClient = ApiClient(
         localDataSource: widget.localDataSource!,
-        onSessionExpired: () => _controller.logout(),
+        onSessionExpired: () => _controller.handleSessionExpired(),
       );
     }
   }

@@ -4,33 +4,25 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 
 import '../../domain/entities/market_rate_item.dart';
 import '../../domain/exceptions/market_rates_exception.dart';
 import 'market_rates_remote_data_source.dart';
 
 /// FastAPI implementation of MarketRatesRemoteDataSource.
-///
-/// Verified endpoints (live OpenAPI, re-verified 2026-09-28):
-/// - `GET  /api/v1/market-rates`        (authenticated)
-/// - `GET  /api/v1/public/market-rates` (anonymous, identical payload)
-/// - `POST /api/v1/market-rates`        (authenticated, MarketRateCreate)
-///
-/// Read fallback is deliberate and documented: `getRates` first performs the
-/// authenticated request and, if it fails for any reason, retries against the
-/// public endpoint, which returns the identical `MarketRatePublic` payload.
-/// Viewing the rate board must not break when a session token is missing or
-/// expired. Mutations (`setRate`) NEVER fall back — they require auth.
 class FastApiMarketRatesRemoteDataSource implements MarketRatesRemoteDataSource {
   static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiMarketRatesRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
 
@@ -88,9 +80,15 @@ class FastApiMarketRatesRemoteDataSource implements MarketRatesRemoteDataSource 
     String? token,
   }) async {
     try {
-      final response = await client
-          .get(uri, headers: _headers(token: token))
-          .timeout(const Duration(seconds: 15));
+      final http.Response response;
+      final authClient = apiClient;
+      if (token != null && token.isNotEmpty && authClient != null) {
+        response = await authClient.get(uri, timeout: const Duration(seconds: 25));
+      } else {
+        response = await client
+            .get(uri, headers: _headers(token: token))
+            .timeout(const Duration(seconds: 25));
+      }
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -153,13 +151,27 @@ class FastApiMarketRatesRemoteDataSource implements MarketRatesRemoteDataSource 
         'effective_date': effectiveDate,
       };
 
-      final response = await client
-          .post(
+      final http.Response response;
+      try {
+        final authClient = apiClient;
+        if (authClient != null) {
+          response = await authClient.post(
             uri,
-            headers: _headers(token: accessToken),
             body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
+            timeout: const Duration(seconds: 25),
+          );
+        } else {
+          response = await client
+              .post(
+                uri,
+                headers: _headers(token: accessToken),
+                body: jsonEncode(payload),
+              )
+              .timeout(const Duration(seconds: 25));
+        }
+      } on AuthException catch (e) {
+        throw MarketRatesUnauthorizedException(message: e.message);
+      }
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         return;

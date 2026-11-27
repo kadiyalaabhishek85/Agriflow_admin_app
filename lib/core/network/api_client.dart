@@ -19,7 +19,7 @@ import '../../features/auth/data/datasources/auth_local_data_source.dart';
 class ApiClient {
   static const String defaultBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://agriflow-backend-t8o4.onrender.com',
+    defaultValue: 'https://agriflow-backend-760e.onrender.com',
   );
   static const String apiPrefix = '/api/v1';
 
@@ -64,11 +64,12 @@ class ApiClient {
     throw ArgumentError('url must be Uri or String');
   }
 
-  /// Executes an HTTP GET request with automatic Bearer token injection and 401 refresh handling.
+  /// Executes an HTTP GET request with automatic Bearer token injection,
+  /// one safe transient retry for reads, and 401 refresh handling.
   Future<http.Response> get(
     dynamic url, {
     Map<String, String>? headers,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     final uri = _resolveUri(url);
     return _sendWithRetry(
@@ -77,6 +78,7 @@ class ApiClient {
         headers: await _buildHeaders(headers),
       ),
       timeout: timeout,
+      allowTransientRetry: true,
     );
   }
 
@@ -85,7 +87,7 @@ class ApiClient {
     dynamic url, {
     Map<String, String>? headers,
     Object? body,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     final uri = _resolveUri(url);
     return _sendWithRetry(
@@ -95,6 +97,7 @@ class ApiClient {
         body: body,
       ),
       timeout: timeout,
+      allowTransientRetry: false,
     );
   }
 
@@ -103,7 +106,7 @@ class ApiClient {
     dynamic url, {
     Map<String, String>? headers,
     Object? body,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     final uri = _resolveUri(url);
     return _sendWithRetry(
@@ -113,6 +116,7 @@ class ApiClient {
         body: body,
       ),
       timeout: timeout,
+      allowTransientRetry: false,
     );
   }
 
@@ -121,7 +125,7 @@ class ApiClient {
     dynamic url, {
     Map<String, String>? headers,
     Object? body,
-    Duration timeout = const Duration(seconds: 15),
+    Duration timeout = const Duration(seconds: 25),
   }) async {
     final uri = _resolveUri(url);
     return _sendWithRetry(
@@ -131,6 +135,7 @@ class ApiClient {
         body: body,
       ),
       timeout: timeout,
+      allowTransientRetry: false,
     );
   }
 
@@ -152,20 +157,34 @@ class ApiClient {
   Future<http.Response> _sendWithRetry(
     Future<http.Response> Function() requestFn, {
     required Duration timeout,
+    bool allowTransientRetry = false,
   }) async {
     http.Response response;
-    try {
-      response = await requestFn().timeout(timeout);
-    } on SocketException catch (_) {
-      throw const AuthException(
-        message: 'Unable to connect. Please check your internet connection.',
-        isNetworkError: true,
-      );
-    } on TimeoutException catch (_) {
-      throw const AuthException(
-        message: 'Server request timed out. Please try again.',
-        isNetworkError: true,
-      );
+    var attempts = 0;
+    while (true) {
+      attempts++;
+      try {
+        response = await requestFn().timeout(timeout);
+        break;
+      } on SocketException catch (_) {
+        if (allowTransientRetry && attempts == 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          continue;
+        }
+        throw const AuthException(
+          message: 'Unable to connect. Please check your internet connection.',
+          isNetworkError: true,
+        );
+      } on TimeoutException catch (_) {
+        if (allowTransientRetry && attempts == 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          continue;
+        }
+        throw const AuthException(
+          message: 'The server is taking too long to respond. Please check your connection and try again.',
+          isNetworkError: true,
+        );
+      }
     }
 
     if (response.statusCode == 401) {
@@ -183,7 +202,7 @@ class ApiClient {
           );
         } on TimeoutException catch (_) {
           throw const AuthException(
-            message: 'Server request timed out. Please try again.',
+            message: 'The server is taking too long to respond. Please check your connection and try again.',
             isNetworkError: true,
           );
         }

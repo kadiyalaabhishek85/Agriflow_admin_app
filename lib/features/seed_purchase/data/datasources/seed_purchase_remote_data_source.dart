@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_catalog_item.dart';
 import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_purchase_exception.dart';
 import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_purchase_item.dart';
@@ -33,12 +35,45 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   SeedPurchaseRemoteDataSourceImpl({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _send(
+    String method,
+    String path, {
+    required String accessToken,
+    Map<String, dynamic>? queryParams,
+    Object? body,
+  }) async {
+    final uri = _uri(path, queryParams);
+    const timeout = Duration(seconds: 25);
+    try {
+      final authClient = apiClient;
+      if (authClient != null) {
+        if (method == 'GET') {
+          return await authClient.get(uri, timeout: timeout);
+        }
+        return await authClient.patch(uri, body: body, timeout: timeout);
+      }
+      final headers = _buildHeaders(accessToken);
+      if (method == 'GET') {
+        return await client.get(uri, headers: headers).timeout(timeout);
+      }
+      return await client.patch(uri, headers: headers, body: body).timeout(timeout);
+    } on AuthException catch (e) {
+      throw SeedPurchaseException(
+        e.message,
+        statusCode: e.statusCode ?? (e.errorCode == 'SESSION_EXPIRED' ? 401 : 0),
+        isNetworkError: e.isNetworkError,
+      );
+    }
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParams]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -109,11 +144,12 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
         queryParams['status'] = status.trim().toLowerCase();
       }
 
-      final uri = _uri('/seed-purchases', queryParams);
-
-      final response = await client
-          .get(uri, headers: _buildHeaders(accessToken))
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/seed-purchases',
+        accessToken: accessToken,
+        queryParams: queryParams,
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -131,6 +167,8 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
       }
     } on SocketException {
       throw const SeedPurchaseException('Unable to connect to server. Please check your internet connection.', isNetworkError: true);
+    } on TimeoutException {
+      throw const SeedPurchaseException('The server is taking too long to respond. Please try again.', isNetworkError: true);
     } on http.ClientException catch (e) {
       throw SeedPurchaseException('Network error: ${e.message}', isNetworkError: true);
     }
@@ -143,12 +181,14 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
     required String newStatus,
   }) async {
     try {
-      final uri = _uri('/seed-purchases/$purchaseId/status');
       final body = jsonEncode({'payment_status': newStatus.toLowerCase()});
 
-      final response = await client
-          .patch(uri, headers: _buildHeaders(accessToken), body: body)
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'PATCH',
+        '/seed-purchases/$purchaseId/status',
+        accessToken: accessToken,
+        body: body,
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -159,6 +199,8 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
       }
     } on SocketException {
       throw const SeedPurchaseException('Unable to connect to server. Please check your internet connection.', isNetworkError: true);
+    } on TimeoutException {
+      throw const SeedPurchaseException('The server is taking too long to respond. Please verify order status before retrying.', isNetworkError: true);
     } on http.ClientException catch (e) {
       throw SeedPurchaseException('Network error: ${e.message}', isNetworkError: true);
     }
@@ -167,10 +209,7 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
   @override
   Future<List<SeedCatalogItem>> getSeeds({required String accessToken}) async {
     try {
-      final uri = _uri('/seeds');
-      final response = await client
-          .get(uri, headers: _buildHeaders(accessToken))
-          .timeout(const Duration(seconds: 15));
+      final response = await _send('GET', '/seeds', accessToken: accessToken);
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -188,10 +227,12 @@ class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
     required String accessToken,
   }) async {
     try {
-      final uri = _uri('/farmers', {'page': '1', 'page_size': '100'});
-      final response = await client
-          .get(uri, headers: _buildHeaders(accessToken))
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/farmers',
+        accessToken: accessToken,
+        queryParams: {'page': '1', 'page_size': '100'},
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;

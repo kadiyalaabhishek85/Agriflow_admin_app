@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/app_date_picker.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/sheet_drag_handle.dart';
 
@@ -58,24 +59,12 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: _selectedDate,
       firstDate: DateTime.now().subtract(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 90)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.canopy,
-              onPrimary: Colors.white,
-              surface: AppColors.surface,
-              onSurface: AppColors.text,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      helpText: 'Select slot date',
     );
     if (picked != null) {
       setState(() => _selectedDate = picked);

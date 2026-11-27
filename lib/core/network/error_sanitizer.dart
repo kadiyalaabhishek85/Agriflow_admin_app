@@ -7,6 +7,9 @@ class ErrorSanitizer {
   static const String networkErrorMessage =
       'Unable to connect. Please check your internet connection.';
 
+  static const String timeoutErrorMessage =
+      'The server is taking too long to respond. Please check your connection and try again.';
+
   static const String sessionExpiredMessage =
       'Your session has expired. Please log in again.';
 
@@ -34,14 +37,18 @@ class ErrorSanitizer {
 
     final errStr = error.toString().toLowerCase();
 
+    // Slow backend / timeout failures
+    if (errStr.contains('timeout') || errStr.contains('taking too long')) {
+      return timeoutErrorMessage;
+    }
+
     // Network / Socket failures
     if (errStr.contains('socketexception') ||
         errStr.contains('connection refused') ||
         errStr.contains('network') ||
         errStr.contains('failed host lookup') ||
         errStr.contains('handshake') ||
-        errStr.contains('clientexception') ||
-        errStr.contains('timeout')) {
+        errStr.contains('clientexception')) {
       return networkErrorMessage;
     }
 

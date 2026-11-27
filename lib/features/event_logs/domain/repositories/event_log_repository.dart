@@ -14,6 +14,7 @@ abstract class EventLogRepository {
     int page = 1,
     int pageSize = 20,
     String? search,
+    String? role,
     String? sort,
     String? order,
   });

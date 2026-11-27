@@ -2,11 +2,15 @@ import 'dart:js_interop';
 import 'dart:typed_data';
 import 'package:web/web.dart' as web;
 
-/// Triggers a browser download for a generated PDF invoice on Flutter Web.
-Future<String?> saveInvoiceBytesOnWeb(Uint8List bytes, String fileName) async {
+/// Triggers a browser download for a generated report or invoice on Flutter Web.
+Future<String?> saveInvoiceBytesOnWeb(
+  Uint8List bytes,
+  String fileName, {
+  String mimeType = 'application/pdf',
+}) async {
   final blob = web.Blob(
     <JSUint8Array>[bytes.toJS].toJS,
-    web.BlobPropertyBag(type: 'application/pdf'),
+    web.BlobPropertyBag(type: mimeType),
   );
   final url = web.URL.createObjectURL(blob);
   final anchor = web.HTMLAnchorElement()

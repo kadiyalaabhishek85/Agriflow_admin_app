@@ -18,12 +18,34 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiAdminDashboardRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _get(
+    String path, {
+    required String accessToken,
+    Map<String, dynamic>? queryParams,
+    Duration timeout = const Duration(seconds: 20),
+    bool authenticated = true,
+  }) async {
+    final uri = _uri(path, queryParams);
+    final authClient = apiClient;
+    if (authenticated && authClient != null) {
+      return authClient.get(uri, timeout: timeout);
+    }
+    return client
+        .get(
+          uri,
+          headers: authenticated ? _headers(token: accessToken) : null,
+        )
+        .timeout(timeout);
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParams]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -43,12 +65,11 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
   Future<AdminDashboardData> fetchDashboardData({required String accessToken}) async {
     try {
       // 1. Fetch Primary Admin Dashboard KPI Metrics
-      final dashboardResponse = await client
-          .get(
-            _uri('/admin/dashboard'),
-            headers: _headers(token: accessToken),
-          )
-          .timeout(const Duration(seconds: 15));
+      final dashboardResponse = await _get(
+        '/admin/dashboard',
+        accessToken: accessToken,
+        timeout: const Duration(seconds: 25),
+      );
 
       final dashboardJson = _parseResponse(dashboardResponse);
       final summaryData = (dashboardJson['data'] as Map<String, dynamic>?) ?? dashboardJson;
@@ -90,12 +111,12 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
 
         final reportFutures = months.map((m) async {
           try {
-            final repRes = await client
-                .get(
-                  _uri('/admin/reports/monthly', {'month': m}),
-                  headers: _headers(token: accessToken),
-                )
-                .timeout(const Duration(seconds: 5));
+            final repRes = await _get(
+              '/admin/reports/monthly',
+              accessToken: accessToken,
+              queryParams: {'month': m},
+              timeout: const Duration(seconds: 8),
+            );
             if (repRes.statusCode == 401) {
               sawUnauthorized = true;
               return null;
@@ -141,9 +162,11 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
       int totalVisitsCount = 0;
       bool visitsFetchFailed = false;
       try {
-        final visitsRes = await client
-            .get(_uri('/farm-visits'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 8));
+        final visitsRes = await _get(
+          '/farm-visits',
+          accessToken: accessToken,
+          timeout: const Duration(seconds: 10),
+        );
         if (visitsRes.statusCode == 401) {
           throw const AuthException(
             message: 'Session expired. Please log in again.',
@@ -172,9 +195,11 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
       int warehousesCount = 0;
       bool warehousesFetchFailed = false;
       try {
-        final whRes = await client
-            .get(_uri('/warehouses'), headers: _headers(token: accessToken))
-            .timeout(const Duration(seconds: 8));
+        final whRes = await _get(
+          '/warehouses',
+          accessToken: accessToken,
+          timeout: const Duration(seconds: 10),
+        );
         if (whRes.statusCode == 401) {
           throw const AuthException(
             message: 'Session expired. Please log in again.',
@@ -200,12 +225,12 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
       // 6. Fetch Recent Audit Logs
       List<AdminAuditItem> auditLogs = [];
       try {
-        final auditRes = await client
-            .get(
-              _uri('/admin/audit-logs', {'page': '1', 'page_size': '5'}),
-              headers: _headers(token: accessToken),
-            )
-            .timeout(const Duration(seconds: 8));
+        final auditRes = await _get(
+          '/admin/audit-logs',
+          accessToken: accessToken,
+          queryParams: {'page': '1', 'page_size': '5'},
+          timeout: const Duration(seconds: 10),
+        );
         if (auditRes.statusCode == 401) {
           throw const AuthException(
             message: 'Session expired. Please log in again.',

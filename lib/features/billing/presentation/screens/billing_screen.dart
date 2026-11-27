@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/widgets/app_date_picker.dart';
 import '../../../../core/widgets/state_views.dart';
 import '../../domain/entities/billing_transaction_item.dart';
 import '../controllers/billing_controller.dart';
@@ -251,25 +252,14 @@ class _BillingScreenState extends State<BillingScreen> {
   }
 
   Future<void> _pickDateRange() async {
-    final picked = await showDateRangePicker(
+    final picked = await showAppDateRangePicker(
       context: context,
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       initialDateRange: widget.controller.fromDate != null && widget.controller.toDate != null
           ? DateTimeRange(start: widget.controller.fromDate!, end: widget.controller.toDate!)
           : null,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.canopy,
-              onPrimary: Colors.white,
-              onSurface: AppColors.text,
-            ),
-          ),
-          child: child!,
-        );
-      },
+      helpText: 'Filter by date range',
     );
 
     if (picked != null) {

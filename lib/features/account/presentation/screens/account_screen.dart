@@ -29,6 +29,7 @@ class AccountScreen extends StatefulWidget {
   final VoidCallback onLogout;
   final VoidCallback? onBack;
   final http.Client? httpClient;
+  final ApiClient? apiClient;
 
   /// When provided, a successful profile edit is applied to the active
   /// session so shells/drawer headers rebuild with the updated name/email.
@@ -40,6 +41,7 @@ class AccountScreen extends StatefulWidget {
     required this.onLogout,
     this.onBack,
     this.httpClient,
+    this.apiClient,
     this.authController,
   });
 
@@ -61,6 +63,7 @@ class _AccountScreenState extends State<AccountScreen> {
         user: _localUser ?? widget.session.user,
         accessToken: widget.session.accessToken,
         httpClient: widget.httpClient,
+        apiClient: widget.apiClient,
         onSaved: (updated) {
           widget.authController?.applyUser(updated);
           if (mounted) {
@@ -80,6 +83,7 @@ class _AccountScreenState extends State<AccountScreen> {
       builder: (ctx) => _ChangePasswordSheet(
         accessToken: widget.session.accessToken,
         httpClient: widget.httpClient,
+        apiClient: widget.apiClient,
       ),
     );
   }
@@ -441,10 +445,12 @@ class _AccountScreenState extends State<AccountScreen> {
 class _ChangePasswordSheet extends StatefulWidget {
   final String accessToken;
   final http.Client? httpClient;
+  final ApiClient? apiClient;
 
   const _ChangePasswordSheet({
     required this.accessToken,
     this.httpClient,
+    this.apiClient,
   });
 
   @override
@@ -486,24 +492,35 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
       _errorMessage = null;
     });
 
-    final client = widget.httpClient ?? http.Client();
     final uri = Uri.parse('${ApiClient.defaultBaseUrl}/api/v1/auth/change-password');
+    final body = jsonEncode({
+      'current_password': _currentPasswordController.text,
+      'new_password': _newPasswordController.text,
+    });
 
     try {
-      final response = await client
-          .post(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': 'Bearer ${widget.accessToken}',
-            },
-            body: jsonEncode({
-              'current_password': _currentPasswordController.text,
-              'new_password': _newPasswordController.text,
-            }),
-          )
-          .timeout(const Duration(seconds: 12));
+      final authClient = widget.apiClient;
+      final http.Response response;
+      if (widget.httpClient == null && authClient != null) {
+        response = await authClient.post(
+          uri,
+          body: body,
+          timeout: const Duration(seconds: 15),
+        );
+      } else {
+        final client = widget.httpClient ?? http.Client();
+        response = await client
+            .post(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Authorization': 'Bearer ${widget.accessToken}',
+              },
+              body: body,
+            )
+            .timeout(const Duration(seconds: 12));
+      }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         if (!mounted) return;
@@ -699,6 +716,7 @@ class _EditProfileSheet extends StatefulWidget {
   final AuthUser user;
   final String accessToken;
   final http.Client? httpClient;
+  final ApiClient? apiClient;
   final void Function(AuthUser updated) onSaved;
 
   const _EditProfileSheet({
@@ -706,6 +724,7 @@ class _EditProfileSheet extends StatefulWidget {
     required this.accessToken,
     required this.onSaved,
     this.httpClient,
+    this.apiClient,
   });
 
   @override
@@ -742,27 +761,38 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       _errorMessage = null;
     });
 
-    final client = widget.httpClient ?? http.Client();
     final uri = Uri.parse(
       '${ApiClient.defaultBaseUrl}/api/v1/users/me',
     );
     final email = _emailController.text.trim();
+    final body = jsonEncode({
+      'name': _nameController.text.trim(),
+      'email': email.isEmpty ? null : email,
+    });
 
     try {
-      final response = await client
-          .patch(
-            uri,
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': 'Bearer ${widget.accessToken}',
-            },
-            body: jsonEncode({
-              'name': _nameController.text.trim(),
-              'email': email.isEmpty ? null : email,
-            }),
-          )
-          .timeout(const Duration(seconds: 12));
+      final authClient = widget.apiClient;
+      final http.Response response;
+      if (widget.httpClient == null && authClient != null) {
+        response = await authClient.patch(
+          uri,
+          body: body,
+          timeout: const Duration(seconds: 15),
+        );
+      } else {
+        final client = widget.httpClient ?? http.Client();
+        response = await client
+            .patch(
+              uri,
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'Authorization': 'Bearer ${widget.accessToken}',
+              },
+              body: body,
+            )
+            .timeout(const Duration(seconds: 12));
+      }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
         Map<String, dynamic> decoded = const {};

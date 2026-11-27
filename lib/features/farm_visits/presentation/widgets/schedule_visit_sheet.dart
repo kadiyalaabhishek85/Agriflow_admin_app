@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/app_date_picker.dart';
 import '../../../../core/widgets/sheet_drag_handle.dart';
 
 /// Modal bottom sheet for creating a farm visit via POST /api/v1/farm-visits.
@@ -105,11 +106,12 @@ class _ScheduleVisitSheetState extends State<ScheduleVisitSheet> {
   }
 
   Future<void> _pickDate() async {
-    final picked = await showDatePicker(
+    final picked = await showAppDatePicker(
       context: context,
       initialDate: _date ?? DateTime.now(),
       firstDate: DateTime.now().subtract(const Duration(days: 7)),
       lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Select visit date',
     );
     if (picked != null) {
       setState(() => _date = picked);
@@ -324,13 +326,17 @@ class _ScheduleVisitSheetState extends State<ScheduleVisitSheet> {
                                     child: Row(
                                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                       children: [
-                                        Text(
-                                          _dateLabel(),
-                                          style: AppTypography.bodyMedium(
-                                            color:
-                                                _date == null ? AppColors.textFaint : AppColors.text,
+                                        Flexible(
+                                          child: Text(
+                                            _dateLabel(),
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppTypography.bodyMedium(
+                                              color:
+                                                  _date == null ? AppColors.textFaint : AppColors.text,
+                                            ),
                                           ),
                                         ),
+                                        const SizedBox(width: 4),
                                         const Icon(Icons.calendar_month,
                                             color: AppColors.canopy, size: 18),
                                       ],

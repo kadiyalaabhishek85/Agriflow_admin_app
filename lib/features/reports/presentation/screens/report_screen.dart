@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
+import '../../../../core/widgets/sheet_drag_handle.dart';
 import '../../../../core/widgets/squircle_icon_button.dart';
+import '../../data/services/platform_report_exporter.dart';
 import '../../domain/entities/monthly_report.dart';
+import '../../domain/services/report_exporter.dart';
 import '../controllers/report_controller.dart';
 
-/// Monthly Reports screen (M7-2): month navigator, four report stat cards,
-/// and a disabled Export control (PDF/CSV export is backend-pending).
+/// Monthly Reports screen (M7-2): live monthly metrics, month navigator,
+/// real-time refresh, and working PDF/CSV export on Android & Web.
 class ReportScreen extends StatefulWidget {
   final ReportController controller;
   final VoidCallback onBack;
+  final ReportExporter? exporter;
 
   const ReportScreen({
     super.key,
     required this.controller,
     required this.onBack,
+    this.exporter,
   });
 
   @override
@@ -21,15 +26,138 @@ class ReportScreen extends StatefulWidget {
 }
 
 class _ReportScreenState extends State<ReportScreen> {
+  bool _isExporting = false;
+  String? _exportStatusMessage;
+  String? _exportLocation;
+  bool _exportIsError = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.controller.report == null &&
-          widget.controller.errorMessage == null) {
+      if (!mounted) return;
+      if (!widget.controller.isLoading) {
         widget.controller.loadReport();
       }
     });
+  }
+
+  Future<void> _exportReport(
+    ReportController ctrl,
+    MonthlyReport report,
+    ReportExportFormat format,
+  ) async {
+    if (_isExporting) return;
+    setState(() {
+      _isExporting = true;
+      _exportStatusMessage = null;
+      _exportLocation = null;
+    });
+
+    final exporter = widget.exporter ?? PlatformReportExporter();
+    ReportExportResult result;
+    try {
+      result = await exporter.export(
+        report: report,
+        monthLabel: ctrl.monthLabel,
+        format: format,
+      );
+    } catch (_) {
+      result = const ReportExportResult(
+        success: false,
+        message: ReportMessages.saveFailure,
+      );
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _isExporting = false;
+      _exportIsError = !result.success;
+      _exportStatusMessage = result.message;
+      _exportLocation = result.success ? result.location : null;
+    });
+  }
+
+  void _showExportSheet(ReportController ctrl, MonthlyReport report) {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SheetDragHandle(),
+              const SizedBox(height: 14),
+              Text(
+                'Export ${ctrl.monthLabel} Report',
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.text,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Choose a file format to download this month\'s live report.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                key: const Key('report_sheet_pdf_btn'),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.line),
+                ),
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.surfaceAlt,
+                  child: Icon(Icons.picture_as_pdf_rounded, color: AppColors.canopyDeep),
+                ),
+                title: const Text(
+                  'Download PDF Report',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text),
+                ),
+                subtitle: Text('AgriFlow_Report_${report.month}.pdf'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _exportReport(ctrl, report, ReportExportFormat.pdf);
+                },
+              ),
+              const SizedBox(height: 10),
+              ListTile(
+                key: const Key('report_sheet_csv_btn'),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  side: const BorderSide(color: AppColors.line),
+                ),
+                leading: const CircleAvatar(
+                  backgroundColor: AppColors.infoBg,
+                  child: Icon(Icons.table_chart_outlined, color: AppColors.adminNavy),
+                ),
+                title: const Text(
+                  'Download CSV Spreadsheet',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text),
+                ),
+                subtitle: Text('AgriFlow_Report_${report.month}.csv'),
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _exportReport(ctrl, report, ReportExportFormat.csv);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -47,10 +175,20 @@ class _ReportScreenState extends State<ReportScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildHeader(),
+                _buildHeader(ctrl, report),
 
                 // Month navigator
                 _buildMonthNavigator(ctrl),
+
+                if (ctrl.isLoading && report != null)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: LinearProgressIndicator(
+                      minHeight: 2.5,
+                      color: AppColors.canopy,
+                      backgroundColor: AppColors.surfaceAlt,
+                    ),
+                  ),
 
                 if (ctrl.errorMessage != null && report != null)
                   _buildErrorBanner(ctrl.errorMessage!),
@@ -66,7 +204,8 @@ class _ReportScreenState extends State<ReportScreen> {
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(ReportController ctrl, MonthlyReport? report) {
+    final canExport = report != null && !_isExporting;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Row(
@@ -102,20 +241,47 @@ class _ReportScreenState extends State<ReportScreen> {
               ],
             ),
           ),
-
-          // Export is backend-pending (PDF/CSV export API not available yet)
-          const Tooltip(
-            message:
-                'PDF/CSV export: Backend API required — to be supplied by Syed.',
-            child: SquircleIconButton(
-              key: Key('report_export_btn'),
-              icon: Icon(
-                Icons.file_download_outlined,
-                size: 18,
-                color: AppColors.textFaint,
-              ),
-              size: 38,
+          SquircleIconButton(
+            key: const Key('report_refresh_btn'),
+            tooltip: 'Refresh live data',
+            onTap: ctrl.isLoading
+                ? null
+                : () {
+                    setState(() {
+                      _exportStatusMessage = null;
+                      _exportLocation = null;
+                    });
+                    ctrl.loadReport();
+                  },
+            icon: Icon(
+              Icons.refresh_rounded,
+              size: 18,
+              color: ctrl.isLoading ? AppColors.textFaint : AppColors.forest,
             ),
+            size: 38,
+          ),
+          const SizedBox(width: 8),
+          SquircleIconButton(
+            key: const Key('report_export_btn'),
+            tooltip: 'Download report (PDF / CSV)',
+            onTap: canExport ? () => _showExportSheet(ctrl, report) : null,
+            backgroundColor: canExport ? AppColors.surfaceAlt : null,
+            borderColor: canExport ? AppColors.canopy.withAlpha(90) : null,
+            icon: _isExporting
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.canopy,
+                    ),
+                  )
+                : Icon(
+                    Icons.file_download_outlined,
+                    size: 18,
+                    color: canExport ? AppColors.canopyDeep : AppColors.textFaint,
+                  ),
+            size: 38,
           ),
         ],
       ),
@@ -139,8 +305,15 @@ class _ReportScreenState extends State<ReportScreen> {
               icon: const Icon(Icons.chevron_left_rounded,
                   size: 18, color: AppColors.textMuted),
               size: 32,
-              onTap:
-                  ctrl.isLoading ? null : () => ctrl.goToPreviousMonth(),
+              onTap: ctrl.isLoading
+                  ? null
+                  : () {
+                      setState(() {
+                        _exportStatusMessage = null;
+                        _exportLocation = null;
+                      });
+                      ctrl.goToPreviousMonth();
+                    },
             ),
             Expanded(
               child: Text(
@@ -158,7 +331,15 @@ class _ReportScreenState extends State<ReportScreen> {
               icon: const Icon(Icons.chevron_right_rounded,
                   size: 18, color: AppColors.textMuted),
               size: 32,
-              onTap: ctrl.isLoading ? null : () => ctrl.goToNextMonth(),
+              onTap: ctrl.isLoading
+                  ? null
+                  : () {
+                      setState(() {
+                        _exportStatusMessage = null;
+                        _exportLocation = null;
+                      });
+                      ctrl.goToNextMonth();
+                    },
             ),
           ],
         ),
@@ -283,21 +464,124 @@ class _ReportScreenState extends State<ReportScreen> {
             icon: Icons.person_add_alt_1_outlined,
           ),
           const SizedBox(height: 16),
+          if (_exportStatusMessage != null) ...[
+            Container(
+              key: const Key('report_export_status'),
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _exportIsError ? AppColors.badBg : AppColors.goodBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: (_exportIsError ? AppColors.bad : AppColors.good)
+                      .withAlpha(65),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _exportIsError
+                        ? Icons.error_outline_rounded
+                        : Icons.check_circle_outline_rounded,
+                    size: 18,
+                    color: _exportIsError ? AppColors.bad : AppColors.good,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _exportLocation != null
+                          ? '$_exportStatusMessage ($_exportLocation)'
+                          : _exportStatusMessage!,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _exportIsError ? AppColors.bad : AppColors.good,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: AppColors.surface,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(color: AppColors.line),
             ),
-            child: const Text(
-              'PDF/CSV report export: Backend API required — to be supplied by Syed.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: AppColors.textMuted,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Download Monthly Report',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.text,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Export ${ctrl.monthLabel} summary metrics as PDF or CSV.',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.textMuted,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const Key('report_export_csv_btn'),
+                        onPressed: _isExporting
+                            ? null
+                            : () => _exportReport(
+                                  ctrl,
+                                  report,
+                                  ReportExportFormat.csv,
+                                ),
+                        icon: const Icon(Icons.table_chart_outlined, size: 17),
+                        label: const Text('Export CSV'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.forest,
+                          side: const BorderSide(color: AppColors.line, width: 1.4),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        key: const Key('report_export_pdf_btn'),
+                        onPressed: _isExporting
+                            ? null
+                            : () => _exportReport(
+                                  ctrl,
+                                  report,
+                                  ReportExportFormat.pdf,
+                                ),
+                        icon: const Icon(Icons.picture_as_pdf_rounded, size: 17),
+                        label: const Text('Export PDF'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.canopy,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],

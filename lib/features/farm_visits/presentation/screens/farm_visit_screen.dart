@@ -186,7 +186,7 @@ class _FarmVisitScreenState extends State<FarmVisitScreen> {
       context: context,
       loadCrops: widget.controller.getCropOptions,
       loadStaff: widget.controller.getStaffOptions,
-      isSubmitting: widget.controller.isLoading,
+      isSubmitting: widget.controller.isSubmitting,
       onSubmit: ({
         required String cropId,
         required int visitMonth,
@@ -347,41 +347,57 @@ class _FarmVisitScreenState extends State<FarmVisitScreen> {
   }
 
   Widget _buildFilterChips() {
-    return SizedBox(
-      height: 38,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _filters.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final filter = _filters[index];
-          final isSelected = widget.controller.activeFilter == filter.value;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < _filters.length; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Builder(
+                  builder: (context) {
+                    final filter = _filters[i];
+                    final isSelected = widget.controller.activeFilter == filter.value;
 
-          return ChoiceChip(
-            label: Text(filter.label),
-            selected: isSelected,
-            onSelected: (selected) {
-              if (selected) {
-                widget.controller.setFilter(filter.value);
-              }
-            },
-            selectedColor: AppColors.canopy,
-            backgroundColor: AppColors.surface,
-            labelStyle: AppTypography.bodySmall(
-              color: isSelected ? Colors.white : AppColors.text,
-            ).copyWith(
-              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            ),
-            side: BorderSide(
-              color: isSelected ? AppColors.canopy : AppColors.line,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(100),
-            ),
-            showCheckmark: false,
-          );
-        },
+                    return ChoiceChip(
+                      label: Text(filter.label),
+                      selected: isSelected,
+                      onSelected: (selected) {
+                        if (selected) {
+                          widget.controller.setFilter(filter.value);
+                        }
+                      },
+                      selectedColor: AppColors.canopy,
+                      backgroundColor: AppColors.surface,
+                      labelStyle: AppTypography.bodySmall(
+                        color: isSelected ? Colors.white : AppColors.text,
+                      ).copyWith(
+                        fontSize: 12,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                      side: BorderSide(
+                        color: isSelected ? AppColors.canopy : AppColors.line,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(100),
+                      ),
+                      showCheckmark: false,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                      labelPadding: const EdgeInsets.symmetric(horizontal: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    );
+                  },
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

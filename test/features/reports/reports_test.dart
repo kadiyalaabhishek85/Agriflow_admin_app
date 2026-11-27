@@ -8,15 +8,37 @@ import 'package:http/testing.dart';
 import 'package:agriflow_admin/features/reports/data/datasources/fast_api_report_remote_data_source.dart';
 import 'package:agriflow_admin/features/reports/data/datasources/report_remote_data_source.dart';
 import 'package:agriflow_admin/features/reports/data/repositories/report_repository_impl.dart';
+import 'package:agriflow_admin/features/reports/data/services/platform_report_exporter.dart';
 import 'package:agriflow_admin/features/reports/domain/entities/monthly_report.dart';
 import 'package:agriflow_admin/features/reports/domain/entities/reports_exception.dart';
+import 'package:agriflow_admin/features/reports/domain/report_export/report_export_builder.dart';
 import 'package:agriflow_admin/features/reports/domain/repositories/report_repository.dart';
+import 'package:agriflow_admin/features/reports/domain/services/report_exporter.dart';
 import 'package:agriflow_admin/features/reports/presentation/controllers/report_controller.dart';
 import 'package:agriflow_admin/features/reports/presentation/screens/report_screen.dart';
 
 // ---------------------------------------------------------------------------
 // Mock Remote Data Source for Controller / Widget Testing
 // ---------------------------------------------------------------------------
+
+class _FakeReportExporter implements ReportExporter {
+  final List<ReportExportFormat> requestedFormats = [];
+  ReportExportResult resultToReturn = const ReportExportResult(
+    success: true,
+    message: ReportMessages.pdfExportSuccess,
+    location: 'AgriFlow_Report_2026-10.pdf',
+  );
+
+  @override
+  Future<ReportExportResult> export({
+    required MonthlyReport report,
+    required String monthLabel,
+    required ReportExportFormat format,
+  }) async {
+    requestedFormats.add(format);
+    return resultToReturn;
+  }
+}
 
 class _MockReportRemoteDataSource implements ReportRemoteDataSource {
   Exception? errorToThrow;
@@ -265,30 +287,92 @@ void main() {
       expect(find.text('GRAIN SALES'), findsOneWidget);
     });
 
-    testWidgets('Export control is present but backend-blocked',
+    testWidgets('Export controls download PDF and CSV and surface inline status',
         (tester) async {
       tester.view.physicalSize = const Size(412, 915);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(() => tester.view.resetPhysicalSize());
 
+      final fakeExporter = _FakeReportExporter();
+
       await tester.pumpWidget(
         _buildTestApp(
-          ReportScreen(controller: controller, onBack: () {}),
+          ReportScreen(
+            controller: controller,
+            onBack: () {},
+            exporter: fakeExporter,
+          ),
         ),
       );
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('report_export_btn')), findsOneWidget);
-      expect(
-        find.byTooltip(
-            'PDF/CSV export: Backend API required — to be supplied by Syed.'),
-        findsOneWidget,
+      expect(find.byKey(const Key('report_export_pdf_btn')), findsOneWidget);
+      expect(find.byKey(const Key('report_export_csv_btn')), findsOneWidget);
+      expect(find.textContaining('to be supplied by Syed'), findsNothing);
+
+      // Tap PDF export button
+      await tester.tap(find.byKey(const Key('report_export_pdf_btn')));
+      await tester.pumpAndSettle();
+      expect(fakeExporter.requestedFormats, [ReportExportFormat.pdf]);
+      expect(find.byKey(const Key('report_export_status')), findsOneWidget);
+
+      // Tap top-right download button -> opens bottom sheet -> choose CSV
+      fakeExporter.resultToReturn = const ReportExportResult(
+        success: true,
+        message: ReportMessages.csvExportSuccess,
+        location: 'AgriFlow_Report_2026-10.csv',
       );
+      await tester.tap(find.byKey(const Key('report_export_btn')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('report_sheet_csv_btn')));
+      await tester.pumpAndSettle();
       expect(
-        find.text(
-            'PDF/CSV report export: Backend API required — to be supplied by Syed.'),
-        findsOneWidget,
+        fakeExporter.requestedFormats,
+        [ReportExportFormat.pdf, ReportExportFormat.csv],
       );
+      expect(find.textContaining(ReportMessages.csvExportSuccess), findsOneWidget);
+    });
+
+    test('CSV builder formats verified report metrics cleanly', () {
+      const report = MonthlyReport(
+        month: '2026-10',
+        totalSeedPurchasesAmount: '120',
+        totalGrainSalesAmount: '5000',
+        totalBookings: 4,
+        newFarmers: 2,
+      );
+      final bytes = buildMonthlyReportCsv(report, 'Oct 2026');
+      final text = utf8.decode(bytes);
+      expect(text, contains('2026-10,Oct 2026,120,5000,4,2'));
+    });
+
+    test('PlatformReportExporter saves CSV via injected saver', () async {
+      String? savedName;
+      String? savedMime;
+      final exporter = PlatformReportExporter(
+        saveFile: (bytes, fileName, mimeType) async {
+          savedName = fileName;
+          savedMime = mimeType;
+          expect(bytes, isNotEmpty);
+          return fileName;
+        },
+      );
+      const report = MonthlyReport(
+        month: '2026-10',
+        totalSeedPurchasesAmount: '120',
+        totalGrainSalesAmount: '0',
+        totalBookings: 1,
+        newFarmers: 0,
+      );
+      final res = await exporter.export(
+        report: report,
+        monthLabel: 'Oct 2026',
+        format: ReportExportFormat.csv,
+      );
+      expect(res.success, isTrue);
+      expect(savedName, 'AgriFlow_Report_2026-10.csv');
+      expect(savedMime, 'text/csv');
     });
 
     testWidgets('Prev/next month buttons reload for adjacent months',

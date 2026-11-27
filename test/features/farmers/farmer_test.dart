@@ -891,6 +891,37 @@ void main() {
       expect(find.text('All Farmers'), findsOneWidget);
       expect(find.byIcon(Icons.account_balance_outlined), findsNothing);
     });
+
+    testWidgets('FarmerScreen renders uncropped filter chips and filters on tap', (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await controller.loadFarmers();
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          FarmerScreen(
+            controller: controller,
+            onBack: () {},
+            isManagerRole: false,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      for (final filter in ['all', 'active', 'pending', 'rejected', 'suspended']) {
+        final chipFinder = find.byKey(Key('farmer_filter_$filter'));
+        expect(chipFinder, findsOneWidget);
+        expect(tester.getRect(chipFinder).right, lessThanOrEqualTo(360.0));
+      }
+
+      await tester.tap(find.byKey(const Key('farmer_filter_pending')));
+      await tester.pumpAndSettle();
+      expect(controller.currentFilter, 'pending');
+      expect(controller.farmers.every((f) => f.status == 'pending'), isTrue);
+    });
   });
 
   group('Responsive Layout Tests (320x600, 360x800, 412x915)', () {

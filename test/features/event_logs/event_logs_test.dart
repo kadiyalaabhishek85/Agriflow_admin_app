@@ -27,6 +27,7 @@ class _MockEventLogRemoteDataSource implements EventLogRemoteDataSource {
 
   int getAuditLogsCallCount = 0;
   String? lastSearch;
+  String? lastRole;
 
   @override
   Future<({
@@ -37,11 +38,13 @@ class _MockEventLogRemoteDataSource implements EventLogRemoteDataSource {
     int page = 1,
     int pageSize = 20,
     String? search,
+    String? role,
     String? sort,
     String? order,
   }) async {
     getAuditLogsCallCount++;
     lastSearch = search;
+    lastRole = role;
     if (errorToThrow != null) throw errorToThrow!;
 
     if (page >= 2 && page2Items.isNotEmpty) {
@@ -52,6 +55,11 @@ class _MockEventLogRemoteDataSource implements EventLogRemoteDataSource {
     }
 
     var filtered = List<AuditLogItem>.from(logsToReturn);
+    if (role != null && role.isNotEmpty && role != 'all') {
+      filtered = filtered
+          .where((l) => (l.actorRole ?? '').toLowerCase() == role.toLowerCase())
+          .toList();
+    }
     if (search != null && search.isNotEmpty) {
       final q = search.toLowerCase();
       filtered = filtered
@@ -451,6 +459,47 @@ void main() {
 
       expect(controller.logs.length, 1);
       expect(find.byKey(const Key('event_log_tile_log-1')), findsOneWidget);
+    });
+
+    testWidgets('EventLogScreen displays actor role chip and filters by manager/farmer',
+        (tester) async {
+      tester.view.physicalSize = const Size(412, 915);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize);
+
+      mockDs.logsToReturn = [
+        AuditLogItem.fromJson({
+          ...sampleJson,
+          'id': 'log-mgr',
+          'actor_name': 'Suresh Manager',
+          'actor_role': 'manager',
+          'action': 'visit.create',
+        }),
+        AuditLogItem.fromJson({
+          ...sampleJson,
+          'id': 'log-frm',
+          'actor_name': 'Ramesh Farmer',
+          'actor_role': 'farmer',
+          'action': 'seed_purchase.create',
+        }),
+      ];
+
+      await tester.pumpWidget(
+        _buildTestApp(
+          EventLogScreen(controller: controller, onBack: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Suresh Manager'), findsOneWidget);
+      expect(find.text('Ramesh Farmer'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('event_log_role_farmer')));
+      await tester.pumpAndSettle();
+
+      expect(mockDs.lastRole, 'farmer');
+      expect(find.text('Ramesh Farmer'), findsOneWidget);
+      expect(find.text('Suresh Manager'), findsNothing);
     });
   });
 }

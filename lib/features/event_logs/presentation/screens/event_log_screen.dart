@@ -31,7 +31,7 @@ class _EventLogScreenState extends State<EventLogScreen> {
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.controller.logs.isEmpty) {
+      if (mounted && !widget.controller.isLoading) {
         widget.controller.loadLogs();
       }
     });
@@ -79,6 +79,16 @@ class _EventLogScreenState extends State<EventLogScreen> {
               children: [
                 _buildHeader(ctrl),
                 _buildSearchBar(ctrl),
+                _buildRoleFilterRow(ctrl),
+                if (ctrl.isLoading && ctrl.logs.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: LinearProgressIndicator(
+                      minHeight: 2.5,
+                      color: AppColors.canopy,
+                      backgroundColor: AppColors.surfaceAlt,
+                    ),
+                  ),
                 if (ctrl.errorMessage != null && ctrl.logs.isNotEmpty) ...[
                   _buildErrorBanner(ctrl.errorMessage!),
                 ],
@@ -130,7 +140,50 @@ class _EventLogScreenState extends State<EventLogScreen> {
               ],
             ),
           ),
+          SquircleIconButton(
+            key: const Key('event_log_refresh_btn'),
+            tooltip: 'Refresh event logs',
+            onTap: ctrl.isLoading ? null : () => ctrl.loadLogs(),
+            icon: Icon(
+              Icons.refresh_rounded,
+              size: 18,
+              color: ctrl.isLoading ? AppColors.textFaint : AppColors.forest,
+            ),
+            size: 38,
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRoleFilterRow(EventLogController ctrl) {
+    const roles = <(String value, String label)>[
+      ('all', 'All Events'),
+      ('super_admin', 'Admin'),
+      ('manager', 'Manager'),
+      ('farmer', 'Farmer'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
+      child: LayoutBuilder(
+        builder: (context, constraints) => FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (int i = 0; i < roles.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                _RoleChip(
+                  chipKey: Key('event_log_role_${roles[i].$1}'),
+                  label: roles[i].$2,
+                  isSelected: ctrl.roleFilter == roles[i].$1,
+                  onTap: () => ctrl.setRoleFilter(roles[i].$1),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -375,11 +428,15 @@ class _EventLogTile extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
+              if (log.actorRole != null && log.actorRole!.isNotEmpty)
+                _roleChip(log.actorRole!),
               if (log.entityType != null && log.entityType!.isNotEmpty)
                 _metaChip(Icons.category_outlined, log.entityType!),
               if (log.entityId != null && log.entityId!.isNotEmpty)
                 _metaChip(Icons.tag, _shortId(log.entityId!)),
-              if (log.userId != null && log.userId!.isNotEmpty)
+              if (log.actorName != null && log.actorName!.isNotEmpty)
+                _metaChip(Icons.person_outline_rounded, log.actorName!)
+              else if (log.userId != null && log.userId!.isNotEmpty)
                 _metaChip(Icons.person_outline_rounded, _shortId(log.userId!)),
             ],
           ),
@@ -424,6 +481,75 @@ class _EventLogTile extends StatelessWidget {
     );
   }
 
+  static Widget _roleChip(String role) {
+    final lower = role.toLowerCase();
+    final (String label, Color bg, Color fg) = switch (lower) {
+      'farmer' => ('Farmer', AppColors.goodBg, AppColors.good),
+      'manager' => ('Manager', AppColors.infoBg, AppColors.adminNavy),
+      'super_admin' => ('Super Admin', AppColors.surfaceAlt, AppColors.forest),
+      _ => (role, AppColors.surfaceAlt, AppColors.textMuted),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: fg,
+        ),
+      ),
+    );
+  }
+
   static String _shortId(String id) =>
       id.length > 12 ? '${id.substring(0, 8)}…' : id;
+}
+
+class _RoleChip extends StatelessWidget {
+  final Key chipKey;
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _RoleChip({
+    required this.chipKey,
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isSelected ? AppColors.forest : AppColors.surface,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        key: chipKey,
+        borderRadius: BorderRadius.circular(18),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: isSelected ? AppColors.forest : AppColors.line,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+              color: isSelected ? Colors.white : AppColors.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

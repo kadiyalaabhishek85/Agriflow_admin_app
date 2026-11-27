@@ -1416,5 +1416,56 @@ void main() {
       expect(outside.isInside, isFalse);
       expect(outside.distanceMeters, greaterThan(1000.0));
     });
+
+    test('createVisit failure preserves loaded visits and success status', () async {
+      final mockRepo = _MockFarmVisitRepository();
+      mockRepo.itemsToReturn = [FarmVisitItem.fromJson(sampleVisitJson)];
+      final controller = FarmVisitController(repository: mockRepo, accessToken: 'token');
+
+      await controller.loadVisits();
+      expect(controller.status, FarmVisitViewStatus.success);
+      expect(controller.visits.length, 1);
+
+      mockRepo.errorToThrow = const FarmVisitValidationException('Duplicate visit month');
+      final ok = await controller.createVisit(
+        cropId: 'crop-1',
+        visitMonth: 3,
+        scheduledDate: '2026-11-28',
+      );
+
+      expect(ok, isFalse);
+      expect(controller.status, FarmVisitViewStatus.success);
+      expect(controller.visits.length, 1);
+      expect(controller.errorMessage, 'Duplicate visit month');
+    });
+
+    testWidgets('FarmVisitScreen renders all filter chips on one fitted line cleanly',
+        (tester) async {
+      addTearDown(tester.view.reset);
+      for (final size in const [Size(320, 640), Size(360, 740), Size(412, 860)]) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+
+        final mockRepo = _MockFarmVisitRepository();
+        mockRepo.itemsToReturn = [FarmVisitItem.fromJson(sampleVisitJson)];
+        final controller = FarmVisitController(repository: mockRepo, accessToken: 'token');
+        await controller.loadVisits();
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: FarmVisitScreen(controller: controller, onBack: () {}),
+          ),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(find.widgetWithText(ChoiceChip, 'All'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Scheduled'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Pending Review'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Completed'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Cancelled'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
+    });
   });
 }

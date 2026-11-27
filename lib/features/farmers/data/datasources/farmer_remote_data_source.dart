@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import '../../domain/entities/bank_change_request_item.dart';
 import '../../domain/entities/farmer_exception.dart';
 import '../../domain/entities/farmer_item.dart';
@@ -82,12 +83,53 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiFarmerRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _send(
+    String method,
+    Uri uri, {
+    required String accessToken,
+    Object? body,
+    Duration timeout = const Duration(seconds: 25),
+  }) async {
+    try {
+      final authClient = apiClient;
+      if (authClient != null) {
+        switch (method) {
+          case 'GET':
+            return await authClient.get(uri, timeout: timeout);
+          case 'POST':
+            return await authClient.post(uri, body: body, timeout: timeout);
+          case 'PATCH':
+            return await authClient.patch(uri, body: body, timeout: timeout);
+        }
+      }
+      final headers = _headers(token: accessToken);
+      switch (method) {
+        case 'GET':
+          return await client.get(uri, headers: headers).timeout(timeout);
+        case 'POST':
+          return await client
+              .post(uri, headers: headers, body: body)
+              .timeout(timeout);
+        case 'PATCH':
+          return await client
+              .patch(uri, headers: headers, body: body)
+              .timeout(timeout);
+        default:
+          throw UnsupportedError('Unsupported HTTP method: $method');
+      }
+    } on AuthException catch (e) {
+      throw FarmerUnauthorizedException(message: e.message);
+    }
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParameters]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -189,10 +231,7 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
       }
 
       final uri = _uri('/farmers', query);
-      final response = await client.get(
-        uri,
-        headers: _headers(token: accessToken),
-      ).timeout(const Duration(seconds: 15));
+      final response = await _send('GET', uri, accessToken: accessToken);
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -237,10 +276,7 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
   }) async {
     try {
       final uri = _uri('/farmers/$farmerId');
-      final response = await client.get(
-        uri,
-        headers: _headers(token: accessToken),
-      ).timeout(const Duration(seconds: 15));
+      final response = await _send('GET', uri, accessToken: accessToken);
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -282,11 +318,12 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
         'status': status.toLowerCase().trim(),
       });
 
-      final response = await client.patch(
+      final response = await _send(
+        'PATCH',
         uri,
-        headers: _headers(token: accessToken),
+        accessToken: accessToken,
         body: body,
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -348,13 +385,12 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
         body['secondary_crop'] = secondaryCrop.trim();
       }
 
-      final response = await client
-          .patch(
-            uri,
-            headers: _headers(token: accessToken),
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'PATCH',
+        uri,
+        accessToken: accessToken,
+        body: jsonEncode(body),
+      );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -415,11 +451,12 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
         payload['crop_address'] = cropAddress.trim();
       }
 
-      final response = await client.post(
+      final response = await _send(
+        'POST',
         uri,
-        headers: _headers(token: accessToken),
+        accessToken: accessToken,
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
@@ -477,10 +514,7 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
       }
 
       final uri = _uri('/farmers/bank-change-requests', query);
-      final response = await client.get(
-        uri,
-        headers: _headers(token: accessToken),
-      ).timeout(const Duration(seconds: 15));
+      final response = await _send('GET', uri, accessToken: accessToken);
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -532,11 +566,12 @@ class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
         'admin_notes': adminNotes,
       };
 
-      final response = await client.patch(
+      final response = await _send(
+        'PATCH',
         uri,
-        headers: _headers(token: accessToken),
+        accessToken: accessToken,
         body: jsonEncode(payload),
-      ).timeout(const Duration(seconds: 15));
+      );
 
       if (response.statusCode == 200) {
         return;

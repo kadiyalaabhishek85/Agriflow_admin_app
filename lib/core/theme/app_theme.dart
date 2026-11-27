@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_typography.dart';
+import '../widgets/app_date_picker.dart';
 
 abstract class AppTheme {
   static ThemeData get lightTheme {
@@ -98,6 +99,7 @@ abstract class AppTheme {
           borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
         ),
       ),
+      datePickerTheme: buildAppDatePickerTheme(),
     );
   }
 }

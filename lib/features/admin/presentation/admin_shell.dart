@@ -177,7 +177,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _dashboardController = widget.dashboardController ??
         AdminDashboardController(
           repository: AdminDashboardRepositoryImpl(
-            remoteDataSource: FastApiAdminDashboardRemoteDataSource(),
+            remoteDataSource: FastApiAdminDashboardRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -186,7 +188,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _seedPurchaseController = widget.seedPurchaseController ??
         SeedPurchaseController(
           repository: SeedPurchaseRepositoryImpl(
-            remoteDataSource: SeedPurchaseRemoteDataSourceImpl(),
+            remoteDataSource: SeedPurchaseRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -204,7 +208,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _farmVisitsController = widget.farmVisitsController ??
         FarmVisitController(
           repository: FarmVisitRepositoryImpl(
-            remoteDataSource: FarmVisitRemoteDataSourceImpl(),
+            remoteDataSource: FarmVisitRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -225,7 +231,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _farmerController = widget.farmerController ??
         FarmerController(
           repository: FarmerRepositoryImpl(
-            remoteDataSource: FastApiFarmerRemoteDataSource(),
+            remoteDataSource: FastApiFarmerRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -351,7 +359,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _marketRatesController = widget.marketRatesController ??
         MarketRatesController(
           repository: MarketRatesRepositoryImpl(
-            remoteDataSource: FastApiMarketRatesRemoteDataSource(),
+            remoteDataSource: FastApiMarketRatesRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
           role: widget.session.role,
@@ -362,7 +372,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _managerController = widget.managerController ??
         ManagerController(
           repository: ManagerRepositoryImpl(
-            remoteDataSource: FastApiManagerRemoteDataSource(),
+            remoteDataSource: FastApiManagerRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -370,7 +382,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _reportController = widget.reportController ??
         ReportController(
           repository: ReportRepositoryImpl(
-            remoteDataSource: FastApiReportRemoteDataSource(),
+            remoteDataSource: FastApiReportRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -378,7 +392,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _eventLogController = widget.eventLogController ??
         EventLogController(
           repository: EventLogRepositoryImpl(
-            remoteDataSource: FastApiEventLogRemoteDataSource(),
+            remoteDataSource: FastApiEventLogRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -632,6 +648,7 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
         session: widget.session,
         onLogout: widget.onLogout,
         onBack: _goBack,
+        apiClient: widget.apiClient,
         authController: widget.authController,
       );
     }

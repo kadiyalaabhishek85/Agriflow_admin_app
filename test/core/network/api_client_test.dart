@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
@@ -293,6 +295,60 @@ void main() {
       // Exactly ONE refresh request was made despite 5 concurrent 401s
       expect(refreshCallCount, 1);
       expect(localDataSource.accessToken, 'new_token_mutex');
+    });
+
+    test('defaultBaseUrl uses deployed Render HTTPS host without /api/v1 suffix', () {
+      expect(ApiClient.defaultBaseUrl, 'https://agriflow-backend-760e.onrender.com');
+      expect(ApiClient.defaultBaseUrl, isNot(contains('/api/v1')));
+    });
+
+    test('GET safely retries once after transient network error and succeeds', () async {
+      final localDataSource = MockAuthLocalDataSource(accessToken: 'valid_token');
+      var calls = 0;
+
+      final fakeClient = FakeHttpClient((request) async {
+        calls++;
+        if (calls == 1) {
+          throw const SocketException('Temporary drop');
+        }
+        return http.Response('{"data":"ok"}', 200);
+      });
+
+      final apiClient = ApiClient(
+        baseUrl: 'https://test.agriflow.com',
+        httpClient: fakeClient,
+        localDataSource: localDataSource,
+      );
+
+      final res = await apiClient.get('/admin/dashboard');
+      expect(res.statusCode, 200);
+      expect(calls, 2);
+    });
+
+    test('POST does NOT retry automatically after TimeoutException', () async {
+      final localDataSource = MockAuthLocalDataSource(accessToken: 'valid_token');
+      var calls = 0;
+
+      final fakeClient = FakeHttpClient((request) async {
+        calls++;
+        throw TimeoutException('Slow backend');
+      });
+
+      final apiClient = ApiClient(
+        baseUrl: 'https://test.agriflow.com',
+        httpClient: fakeClient,
+        localDataSource: localDataSource,
+      );
+
+      await expectLater(
+        () => apiClient.post('/transactions/tx-1/pay', body: '{}'),
+        throwsA(
+          isA<AuthException>()
+              .having((e) => e.isNetworkError, 'isNetworkError', isTrue)
+              .having((e) => e.message, 'message', contains('taking too long')),
+        ),
+      );
+      expect(calls, 1, reason: 'Writes/payments must never be auto-resubmitted on timeout');
     });
   });
 }

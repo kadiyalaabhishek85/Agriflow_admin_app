@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 
 import '../../domain/entities/audit_log_item.dart';
 import '../../domain/entities/audit_log_pagination.dart';
@@ -12,7 +13,7 @@ import 'event_log_remote_data_source.dart';
 
 /// FastAPI implementation of EventLogRemoteDataSource.
 ///
-/// Verified endpoint (live OpenAPI, re-verified 2026-09-28):
+/// Verified endpoint (live OpenAPI):
 /// - `GET /api/v1/admin/audit-logs` → PaginatedResponse[AuditLogPublic]
 class FastApiEventLogRemoteDataSource implements EventLogRemoteDataSource {
   static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
@@ -20,10 +21,12 @@ class FastApiEventLogRemoteDataSource implements EventLogRemoteDataSource {
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiEventLogRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
 
@@ -99,6 +102,7 @@ class FastApiEventLogRemoteDataSource implements EventLogRemoteDataSource {
     int page = 1,
     int pageSize = 20,
     String? search,
+    String? role,
     String? sort,
     String? order,
   }) {
@@ -110,10 +114,22 @@ class FastApiEventLogRemoteDataSource implements EventLogRemoteDataSource {
         'order': order ?? 'desc',
       };
       if (search != null && search.isNotEmpty) query['search'] = search;
+      if (role != null && role.isNotEmpty && role != 'all') query['role'] = role;
 
-      final response = await client
-          .get(_uri('/admin/audit-logs', query), headers: _headers(accessToken))
-          .timeout(const Duration(seconds: 15));
+      final uri = _uri('/admin/audit-logs', query);
+      final http.Response response;
+      try {
+        final authClient = apiClient;
+        if (authClient != null) {
+          response = await authClient.get(uri, timeout: const Duration(seconds: 25));
+        } else {
+          response = await client
+              .get(uri, headers: _headers(accessToken))
+              .timeout(const Duration(seconds: 25));
+        }
+      } on AuthException catch (e) {
+        throw EventLogsUnauthorizedException(message: e.message);
+      }
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;

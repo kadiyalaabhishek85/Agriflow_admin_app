@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 
 import '../../domain/entities/manager_item.dart';
 import '../../domain/entities/manager_pagination.dart';
@@ -11,24 +12,59 @@ import '../../domain/entities/managers_exception.dart';
 import 'manager_remote_data_source.dart';
 
 /// FastAPI implementation of ManagerRemoteDataSource.
-///
-/// Verified endpoints (live OpenAPI, re-verified 2026-09-28):
-/// - `GET   /api/v1/managers`                               → PaginatedResponse[ManagerPublic]
-/// - `POST  /api/v1/managers`                               → 201 SuccessResponse[ManagerPublic]
-/// - `PATCH /api/v1/managers/{manager_id}/status`           → SuccessResponse[ManagerPublic]
-/// - `POST  /api/v1/managers/{manager_id}/reset-password`   → MessageResponse
 class FastApiManagerRemoteDataSource implements ManagerRemoteDataSource {
   static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiManagerRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _send(
+    String method,
+    Uri uri, {
+    required String accessToken,
+    Object? body,
+    Duration timeout = const Duration(seconds: 25),
+  }) async {
+    try {
+      final authClient = apiClient;
+      if (authClient != null) {
+        switch (method) {
+          case 'GET':
+            return await authClient.get(uri, timeout: timeout);
+          case 'POST':
+            return await authClient.post(uri, body: body, timeout: timeout);
+          case 'PATCH':
+            return await authClient.patch(uri, body: body, timeout: timeout);
+        }
+      }
+      final headers = _headers(accessToken);
+      switch (method) {
+        case 'GET':
+          return await client.get(uri, headers: headers).timeout(timeout);
+        case 'POST':
+          return await client
+              .post(uri, headers: headers, body: body)
+              .timeout(timeout);
+        case 'PATCH':
+          return await client
+              .patch(uri, headers: headers, body: body)
+              .timeout(timeout);
+        default:
+          throw UnsupportedError('Unsupported HTTP method: $method');
+      }
+    } on AuthException catch (e) {
+      throw ManagersUnauthorizedException(message: e.message);
+    }
+  }
 
   Uri _uri(String path, [Map<String, String>? query]) =>
       Uri.parse('$baseUrl$apiPrefix$path').replace(queryParameters: query);
@@ -136,9 +172,7 @@ class FastApiManagerRemoteDataSource implements ManagerRemoteDataSource {
         sort: sort,
         order: order,
       ));
-      final response = await client
-          .get(uri, headers: _headers(accessToken))
-          .timeout(const Duration(seconds: 15));
+      final response = await _send('GET', uri, accessToken: accessToken);
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -182,13 +216,12 @@ class FastApiManagerRemoteDataSource implements ManagerRemoteDataSource {
           'department': department,
       };
 
-      final response = await client
-          .post(
-            _uri('/managers'),
-            headers: _headers(accessToken),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'POST',
+        _uri('/managers'),
+        accessToken: accessToken,
+        body: jsonEncode(payload),
+      );
 
       // Contract: 201 Created (SuccessResponse[ManagerPublic]).
       if (response.statusCode == 201 || response.statusCode == 200) {
@@ -213,13 +246,12 @@ class FastApiManagerRemoteDataSource implements ManagerRemoteDataSource {
     required String status,
   }) {
     return _guard(() async {
-      final response = await client
-          .patch(
-            _uri('/managers/$managerId/status'),
-            headers: _headers(accessToken),
-            body: jsonEncode({'status': status}),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'PATCH',
+        _uri('/managers/$managerId/status'),
+        accessToken: accessToken,
+        body: jsonEncode({'status': status}),
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -243,13 +275,12 @@ class FastApiManagerRemoteDataSource implements ManagerRemoteDataSource {
     required String newPassword,
   }) {
     return _guard(() async {
-      final response = await client
-          .post(
-            _uri('/managers/$managerId/reset-password'),
-            headers: _headers(accessToken),
-            body: jsonEncode({'new_password': newPassword}),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'POST',
+        _uri('/managers/$managerId/reset-password'),
+        accessToken: accessToken,
+        body: jsonEncode({'new_password': newPassword}),
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;

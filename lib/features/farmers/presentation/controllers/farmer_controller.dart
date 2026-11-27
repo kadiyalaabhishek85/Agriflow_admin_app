@@ -60,13 +60,18 @@ class FarmerController extends ChangeNotifier {
 
   // Getters
   List<FarmerItem> get farmers {
-    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
-    if (activeQuery.isEmpty) {
-      return List.unmodifiable(_farmers);
+    Iterable<FarmerItem> items = _farmers;
+    if (_currentFilter != 'all') {
+      final targetStatus = _currentFilter.toLowerCase();
+      items = items.where(
+        (item) => item.status.toLowerCase() == targetStatus,
+      );
     }
-    return List.unmodifiable(
-      _farmers.where((item) => _matchesQuery(item, activeQuery)),
-    );
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isNotEmpty) {
+      items = items.where((item) => _matchesQuery(item, activeQuery));
+    }
+    return List.unmodifiable(items);
   }
   FarmerPagination get pagination => _pagination;
   bool get isLoading => _isLoading;
@@ -204,8 +209,11 @@ class FarmerController extends ChangeNotifier {
 
   /// Sets status filter and reloads dataset
   void setFilter(String filter) {
-    if (_currentFilter == filter) return;
-    _currentFilter = filter;
+    final normalized = filter.trim().toLowerCase();
+    if (_currentFilter == normalized) return;
+    _currentFilter = normalized;
+    _errorMessage = null;
+    notifyListeners();
     loadFarmers();
   }
 

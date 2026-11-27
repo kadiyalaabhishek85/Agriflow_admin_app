@@ -154,7 +154,9 @@ class _ManagerShellState extends State<ManagerShell>
     _dashboardController = widget.dashboardController ??
         ManagerDashboardController(
           repository: ManagerDashboardRepositoryImpl(
-            remoteDataSource: FastApiManagerDashboardRemoteDataSource(),
+            remoteDataSource: FastApiManagerDashboardRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -163,7 +165,9 @@ class _ManagerShellState extends State<ManagerShell>
     _seedPurchaseController = widget.seedPurchaseController ??
         SeedPurchaseController(
           repository: SeedPurchaseRepositoryImpl(
-            remoteDataSource: SeedPurchaseRemoteDataSourceImpl(),
+            remoteDataSource: SeedPurchaseRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -181,7 +185,9 @@ class _ManagerShellState extends State<ManagerShell>
     _farmVisitsController = widget.farmVisitsController ??
         FarmVisitController(
           repository: FarmVisitRepositoryImpl(
-            remoteDataSource: FarmVisitRemoteDataSourceImpl(),
+            remoteDataSource: FarmVisitRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -202,7 +208,9 @@ class _ManagerShellState extends State<ManagerShell>
     _farmerController = widget.farmerController ??
         FarmerController(
           repository: FarmerRepositoryImpl(
-            remoteDataSource: FastApiFarmerRemoteDataSource(),
+            remoteDataSource: FastApiFarmerRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -255,7 +263,9 @@ class _ManagerShellState extends State<ManagerShell>
     _marketRatesController = widget.marketRatesController ??
         MarketRatesController(
           repository: MarketRatesRepositoryImpl(
-            remoteDataSource: FastApiMarketRatesRemoteDataSource(),
+            remoteDataSource: FastApiMarketRatesRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
           role: widget.session.role,
@@ -545,6 +555,7 @@ class _ManagerShellState extends State<ManagerShell>
         session: widget.session,
         onLogout: widget.onLogout,
         onBack: _backToHome,
+        apiClient: widget.apiClient,
         authController: widget.authController,
       );
     }

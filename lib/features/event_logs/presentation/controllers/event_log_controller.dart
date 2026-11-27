@@ -23,12 +23,15 @@ class EventLogController extends ChangeNotifier {
   String? _errorMessage;
   String _searchQuery = '';
   String _liveQuery = '';
+  String _roleFilter = 'all';
   int _loadEpoch = 0;
 
   bool _matchesQuery(AuditLogItem item, String query) {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return true;
     return item.action.toLowerCase().contains(q) ||
+        (item.actorName ?? '').toLowerCase().contains(q) ||
+        (item.actorRole ?? '').toLowerCase().contains(q) ||
         (item.entityType ?? '').toLowerCase().contains(q) ||
         (item.entityId ?? '').toLowerCase().contains(q) ||
         (item.details ?? '').toLowerCase().contains(q) ||
@@ -44,14 +47,20 @@ class EventLogController extends ChangeNotifier {
     notifyListeners();
   }
 
+  String get roleFilter => _roleFilter;
+
   List<AuditLogItem> get logs {
-    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
-    if (activeQuery.isEmpty) {
-      return List.unmodifiable(_logs);
+    Iterable<AuditLogItem> items = _logs;
+    if (_roleFilter != 'all') {
+      items = items.where(
+        (item) => (item.actorRole ?? '').toLowerCase() == _roleFilter,
+      );
     }
-    return List.unmodifiable(
-      _logs.where((item) => _matchesQuery(item, activeQuery)),
-    );
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isNotEmpty) {
+      items = items.where((item) => _matchesQuery(item, activeQuery));
+    }
+    return List.unmodifiable(items);
   }
   AuditLogPagination get pagination => _pagination;
   bool get isLoading => _isLoading;
@@ -73,6 +82,7 @@ class EventLogController extends ChangeNotifier {
         accessToken: accessToken,
         page: 1,
         search: _searchQuery.isEmpty ? null : _searchQuery,
+        role: _roleFilter == 'all' ? null : _roleFilter,
       );
       if (epoch != _loadEpoch) return;
 
@@ -87,6 +97,7 @@ class EventLogController extends ChangeNotifier {
             accessToken: accessToken,
             page: p,
             search: _searchQuery,
+            role: _roleFilter == 'all' ? null : _roleFilter,
           );
           if (epoch != _loadEpoch) return;
           if (nextRes.items.isEmpty) break;
@@ -133,6 +144,7 @@ class EventLogController extends ChangeNotifier {
         accessToken: accessToken,
         page: _pagination.page + 1,
         search: _searchQuery.isEmpty ? null : _searchQuery,
+        role: _roleFilter == 'all' ? null : _roleFilter,
       );
       _logs.addAll(result.items);
       _pagination = result.pagination;
@@ -145,6 +157,13 @@ class EventLogController extends ChangeNotifier {
       _isLoadingMore = false;
       notifyListeners();
     }
+  }
+
+  /// Filters audit logs by actor role (`all`, `super_admin`, `manager`, `farmer`).
+  Future<void> setRoleFilter(String role) async {
+    if (_roleFilter == role) return;
+    _roleFilter = role;
+    await loadLogs();
   }
 
   /// Server-side search (the contract exposes a `search` query param).
