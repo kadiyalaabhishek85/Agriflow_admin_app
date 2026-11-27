@@ -122,12 +122,16 @@ class StatusPill extends StatelessWidget {
             icon!,
             const SizedBox(width: 5),
           ],
-          Text(
-            label,
-            style: GoogleFonts.manrope(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
-              color: type.textColor,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.manrope(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: type.textColor,
+              ),
             ),
           ),
         ],

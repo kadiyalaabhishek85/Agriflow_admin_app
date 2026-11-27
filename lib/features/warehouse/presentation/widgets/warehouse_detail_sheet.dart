@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/widgets/app_toast.dart';
 import '../../../../core/widgets/status_pill.dart';
 import '../controllers/warehouse_controller.dart';
 import 'add_inventory_sheet.dart';
@@ -45,10 +46,29 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => AddInventorySheet(
+      builder: (sheetCtx) => AddInventorySheet(
         warehouseId: wh.id,
         warehouseName: wh.name,
-        onAdd: widget.controller.addInventory,
+        availableCapacityKg: wh.availableCapacityKg,
+        errorMessage: () => widget.controller.errorMessage,
+        onAdd: ({
+          required warehouseId,
+          required grainType,
+          required quantityKg,
+        }) async {
+          final ok = await widget.controller.addInventory(
+            warehouseId: warehouseId,
+            grainType: grainType,
+            quantityKg: quantityKg,
+          );
+          if (ok && mounted) {
+            AppToast.show(
+              context,
+              widget.controller.successMessage ?? 'Grain stock added.',
+            );
+          }
+          return ok;
+        },
       ),
     );
   }
@@ -61,10 +81,32 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => CreateSlotSheet(
+      builder: (sheetCtx) => CreateSlotSheet(
         warehouseId: wh.id,
         warehouseName: wh.name,
-        onCreate: widget.controller.createSlot,
+        errorMessage: () => widget.controller.errorMessage,
+        onCreate: ({
+          required warehouseId,
+          required slotDate,
+          required startTime,
+          required endTime,
+          required capacityKg,
+        }) async {
+          final ok = await widget.controller.createSlot(
+            warehouseId: warehouseId,
+            slotDate: slotDate,
+            startTime: startTime,
+            endTime: endTime,
+            capacityKg: capacityKg,
+          );
+          if (ok && mounted) {
+            AppToast.show(
+              context,
+              widget.controller.successMessage ?? 'Booking slot created.',
+            );
+          }
+          return ok;
+        },
       ),
     );
   }
@@ -260,12 +302,17 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text(
-                            'Available: ${warehouse.availableCapacityQtl.toStringAsFixed(1)} Qtl (${(warehouse.availableCapacityKg).toStringAsFixed(0)} kg)',
-                            style: AppTypography.caption(color: AppColors.textFaint).copyWith(
-                              fontSize: 10.5,
+                          Expanded(
+                            child: Text(
+                              'Available: ${warehouse.availableCapacityQtl.toStringAsFixed(1)} Qtl (${(warehouse.availableCapacityKg).toStringAsFixed(0)} kg)',
+                              style: AppTypography.caption(color: AppColors.textFaint).copyWith(
+                                fontSize: 10.5,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
+                          const SizedBox(width: 8),
                           Text(
                             '${warehouse.occupancyPercent.toStringAsFixed(1)}% occupied',
                             style: AppTypography.caption(color: barColor).copyWith(
@@ -321,8 +368,53 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
   }
 
   Widget _buildInventoryTab() {
-    final inventory = widget.controller.selectedInventory;
+    final storedInventory = widget.controller.selectedInventory
+        .where((item) => item.quantityKg > 0)
+        .toList();
+    final bookedStock = widget.controller.selectedBookedStock
+        .where((item) => item.quantityKg > 0)
+        .toList();
     final warehouse = widget.controller.selectedWarehouse!;
+    final storedKg = storedInventory.fold<double>(0.0, (s, i) => s + i.quantityKg);
+    final bookedKg = bookedStock.fold<double>(0.0, (s, i) => s + i.quantityKg);
+    final unallocatedKg = (warehouse.currentLoadKg - storedKg - bookedKg);
+
+    final displayEntries = <({
+      String grainType,
+      double quantityKg,
+      double quantityQtl,
+      String badge,
+      bool isBooked,
+    })>[
+      ...storedInventory.map(
+        (i) => (
+          grainType: i.grainType,
+          quantityKg: i.quantityKg,
+          quantityQtl: i.quantityQtl,
+          badge: '${i.quantityKg.toStringAsFixed(0)} kg stored',
+          isBooked: false,
+        ),
+      ),
+      ...bookedStock.map(
+        (b) => (
+          grainType: b.grainType,
+          quantityKg: b.quantityKg,
+          quantityQtl: b.quantityQtl,
+          badge: '${b.quantityKg.toStringAsFixed(0)} kg · Booked Intake',
+          isBooked: true,
+        ),
+      ),
+      if (bookedStock.isEmpty && unallocatedKg > 0.01)
+        (
+          grainType: 'Booked / Reserved Grain',
+          quantityKg: unallocatedKg,
+          quantityQtl: unallocatedKg / 100.0,
+          badge: '${unallocatedKg.toStringAsFixed(0)} kg · Active Load',
+          isBooked: true,
+        ),
+    ];
+
+    final loadError = widget.controller.errorMessage;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -332,10 +424,12 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Stored Commodities (${inventory.length})',
-                style: AppTypography.caption(color: AppColors.text).copyWith(
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: Text(
+                  'Stored Commodities (${displayEntries.length})',
+                  style: AppTypography.caption(color: AppColors.text).copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
               ElevatedButton.icon(
@@ -356,101 +450,141 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
 
           // Inventory List
           Expanded(
-            child: inventory.isEmpty
+            child: loadError != null && displayEntries.isEmpty
                 ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.inventory_2_outlined, size: 40, color: AppColors.textFaint),
+                        const Icon(Icons.error_outline_rounded, size: 36, color: AppColors.bad),
                         const SizedBox(height: 8),
                         Text(
-                          'No grain stock recorded.',
-                          style: AppTypography.bodySmall(color: AppColors.textMuted),
+                          loadError,
+                          style: AppTypography.bodySmall(color: AppColors.bad),
+                          textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Tap "+ Add Inventory" to log incoming harvested crops.',
-                          style: AppTypography.caption(color: AppColors.textFaint),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => widget.controller.selectWarehouse(warehouse),
+                          icon: const Icon(Icons.refresh_rounded, size: 16),
+                          label: const Text('Retry'),
                         ),
                       ],
                     ),
                   )
-                : ListView.separated(
-                    itemCount: inventory.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final item = inventory[index];
-                      final pctOfCap = warehouse.totalCapacityKg > 0
-                          ? (item.quantityKg / warehouse.totalCapacityKg * 100).toStringAsFixed(1)
-                          : '0.0';
-
-                      return Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.line),
+                : displayEntries.isEmpty
+                    ? Center(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.inventory_2_outlined, size: 40, color: AppColors.textFaint),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No grain stock recorded.',
+                                style: AppTypography.bodySmall(color: AppColors.textMuted),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Tap "+ Add Inventory" to log incoming harvested crops.',
+                                style: AppTypography.caption(color: AppColors.textFaint),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
+                      )
+                    : ListView.separated(
+                        itemCount: displayEntries.length,
+                        separatorBuilder: (context, index) => const SizedBox(height: 8),
+                        itemBuilder: (context, index) {
+                          final item = displayEntries[index];
+                          final pctOfCap = warehouse.totalCapacityKg > 0
+                              ? (item.quantityKg / warehouse.totalCapacityKg * 100).toStringAsFixed(1)
+                              : '0.0';
+
+                          return Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: AppColors.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.line),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.surfaceAlt,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: const Icon(
-                                    Icons.grain,
-                                    size: 18,
-                                    color: AppColors.canopy,
+                                Expanded(
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: item.isBooked
+                                              ? AppColors.infoBg
+                                              : AppColors.surfaceAlt,
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Icon(
+                                          item.isBooked
+                                              ? Icons.event_available_outlined
+                                              : Icons.grain,
+                                          size: 18,
+                                          color: item.isBooked
+                                              ? AppColors.adminNavyLight
+                                              : AppColors.canopy,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              item.grainType,
+                                              style: AppTypography.bodySmall(color: AppColors.text).copyWith(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            Text(
+                                              item.badge,
+                                              style: AppTypography.caption(color: AppColors.textMuted).copyWith(
+                                                fontSize: 10.5,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(width: 10),
+                                const SizedBox(width: 8),
                                 Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      item.grainType,
-                                      style: AppTypography.bodySmall(color: AppColors.text).copyWith(
-                                        fontWeight: FontWeight.w700,
+                                      '${item.quantityQtl.toStringAsFixed(1)} Qtl',
+                                      style: AppTypography.bodySmall(color: AppColors.canopyDeep).copyWith(
+                                        fontWeight: FontWeight.w800,
                                       ),
                                     ),
                                     Text(
-                                      '${item.quantityKg.toStringAsFixed(0)} kg stored',
-                                      style: AppTypography.caption(color: AppColors.textMuted).copyWith(
-                                        fontSize: 10.5,
+                                      '$pctOfCap% of total cap',
+                                      style: AppTypography.caption(color: AppColors.textFaint).copyWith(
+                                        fontSize: 10,
                                       ),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '${item.quantityQtl.toStringAsFixed(1)} Qtl',
-                                  style: AppTypography.bodySmall(color: AppColors.canopyDeep).copyWith(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                Text(
-                                  '$pctOfCap% of total cap',
-                                  style: AppTypography.caption(color: AppColors.textFaint).copyWith(
-                                    fontSize: 10,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                          );
+                        },
+                      ),
           ),
         ],
       ),
@@ -468,10 +602,14 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Intake Windows (${slots.length})',
-                style: AppTypography.caption(color: AppColors.text).copyWith(
-                  fontWeight: FontWeight.w800,
+              Expanded(
+                child: Text(
+                  'Intake Windows (${slots.length})',
+                  style: AppTypography.caption(color: AppColors.text).copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               ElevatedButton.icon(
@@ -494,21 +632,25 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
           Expanded(
             child: slots.isEmpty
                 ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.calendar_today_outlined, size: 40, color: AppColors.textFaint),
-                        const SizedBox(height: 8),
-                        Text(
-                          'No intake booking slots created.',
-                          style: AppTypography.bodySmall(color: AppColors.textMuted),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Tap "+ Add Slot" to open a delivery window for farmers.',
-                          style: AppTypography.caption(color: AppColors.textFaint),
-                        ),
-                      ],
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.calendar_today_outlined, size: 40, color: AppColors.textFaint),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No intake booking slots created.',
+                            style: AppTypography.bodySmall(color: AppColors.textMuted),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Tap "+ Add Slot" to open a delivery window for farmers.',
+                            style: AppTypography.caption(color: AppColors.textFaint),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
                     ),
                   )
                 : ListView.separated(
@@ -531,21 +673,28 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      slot.slotDate,
-                                      style: AppTypography.bodySmall(color: AppColors.text).copyWith(
-                                        fontWeight: FontWeight.w700,
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        slot.slotDate,
+                                        style: AppTypography.bodySmall(color: AppColors.text).copyWith(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
-                                    ),
-                                    Text(
-                                      slot.timeRangeLabel,
-                                      style: AppTypography.caption(color: AppColors.textMuted),
-                                    ),
-                                  ],
+                                      Text(
+                                        slot.timeRangeLabel,
+                                        style: AppTypography.caption(color: AppColors.textMuted),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                const SizedBox(width: 8),
                                 StatusPill.fromStatus(slot.status),
                               ],
                             ),
@@ -555,13 +704,18 @@ class _WarehouseDetailSheetState extends State<WarehouseDetailSheet>
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  'Booked: ${slot.bookedQtl.toStringAsFixed(1)} / ${slot.capacityQtl.toStringAsFixed(1)} Qtl (${slot.occupancyPercent.toStringAsFixed(0)}%)',
-                                  style: AppTypography.caption(color: AppColors.textFaint).copyWith(
-                                    fontSize: 11,
+                                Expanded(
+                                  child: Text(
+                                    'Booked: ${slot.bookedQtl.toStringAsFixed(1)} / ${slot.capacityQtl.toStringAsFixed(1)} Qtl (${slot.occupancyPercent.toStringAsFixed(0)}%)',
+                                    style: AppTypography.caption(color: AppColors.textFaint).copyWith(
+                                      fontSize: 11,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 Row(
+                                  mainAxisSize: MainAxisSize.min,
                                   children: [
                                     if (slot.isActive) ...[
                                       TextButton(

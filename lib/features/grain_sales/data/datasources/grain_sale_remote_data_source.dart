@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import 'package:agriflow_admin/features/farmers/data/farmer_lookup_service.dart';
 import '../../domain/entities/grain_sale_exception.dart';
 import '../../domain/entities/grain_sale_item.dart';
@@ -32,7 +34,7 @@ abstract class GrainSaleRemoteDataSource {
   Future<GrainSaleItem> reviewGrainSale({
     required String accessToken,
     required String saleId,
-    required String bookingSlotId,
+    String? bookingSlotId,
     required double goodQuantityKg,
     required double badQuantityKg,
     bool approve = true,
@@ -59,17 +61,82 @@ abstract class GrainSaleRemoteDataSource {
 
 /// FastAPI implementation of GrainSaleRemoteDataSource.
 class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiGrainSaleRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _send(
+    String method,
+    String path, {
+    required String accessToken,
+    Map<String, dynamic>? queryParameters,
+    Object? body,
+  }) async {
+    final uri = _uri(path, queryParameters);
+    const timeout = Duration(seconds: 15);
+    try {
+      final authClient = apiClient;
+      if (authClient != null) {
+        switch (method) {
+          case 'GET':
+            return await authClient.get(uri, timeout: timeout);
+          case 'POST':
+            return await authClient.post(uri, body: body, timeout: timeout);
+          case 'PATCH':
+            return await authClient.patch(uri, body: body, timeout: timeout);
+        }
+      }
+
+      final headers = _headers(token: accessToken);
+      switch (method) {
+        case 'GET':
+          return await client.get(uri, headers: headers).timeout(timeout);
+        case 'POST':
+          return await client
+              .post(uri, headers: headers, body: body)
+              .timeout(timeout);
+        case 'PATCH':
+          return await client
+              .patch(uri, headers: headers, body: body)
+              .timeout(timeout);
+        default:
+          throw ArgumentError('Unsupported HTTP method: $method');
+      }
+    } on AuthException catch (e) {
+      if (e.statusCode == 401 || e.errorCode == 'SESSION_EXPIRED') {
+        throw GrainSaleUnauthorizedException(message: e.message);
+      }
+      if (e.isNetworkError) {
+        throw GrainSaleException(message: e.message, isNetworkError: true);
+      }
+      throw GrainSaleException(message: e.message, statusCode: e.statusCode);
+    } on SocketException catch (_) {
+      throw const GrainSaleException(
+        message: 'Network connection unavailable. Please check your internet connection.',
+        isNetworkError: true,
+      );
+    } on http.ClientException catch (_) {
+      throw const GrainSaleException(
+        message: 'Network connection unavailable. Please check your internet connection.',
+        isNetworkError: true,
+      );
+    } on TimeoutException catch (_) {
+      throw const GrainSaleException(
+        message: 'Server request timed out. Please try again later.',
+        isNetworkError: true,
+      );
+    }
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParameters]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -162,10 +229,12 @@ class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
         query['order'] = order;
       }
 
-      final uri = _uri('/grain-sales', query);
-      final response = await client
-          .get(uri, headers: _headers(token: accessToken))
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/grain-sales',
+        accessToken: accessToken,
+        queryParameters: query,
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -182,16 +251,9 @@ class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
       }
 
       _handleErrorResponse(response);
-    } on SocketException catch (_) {
-      throw const GrainSaleException(
-        message: 'Network connection unavailable. Please check your internet connection.',
-        isNetworkError: true,
-      );
-    } on TimeoutException catch (_) {
-      throw const GrainSaleException(
-        message: 'Server request timed out. Please try again later.',
-        isNetworkError: true,
-      );
+    } catch (e) {
+      if (e is GrainSaleException) rethrow;
+      rethrow;
     }
   }
 
@@ -205,92 +267,65 @@ class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
     required double goodMaterialKg,
     required double wastageKg,
   }) async {
-    try {
-      final uri = _uri('/grain-sales/procure');
-      final payload = {
-        'farmer_id': farmerId,
-        'grain_type': grainType,
-        'grade': grade,
-        'raw_material_kg': rawMaterialKg,
-        'good_material_kg': goodMaterialKg,
-        'wastage_kg': wastageKg,
-      };
+    final payload = {
+      'farmer_id': farmerId,
+      'grain_type': grainType,
+      'grade': grade,
+      'raw_material_kg': rawMaterialKg,
+      'good_material_kg': goodMaterialKg,
+      'wastage_kg': wastageKg,
+    };
 
-      final response = await client
-          .post(
-            uri,
-            headers: _headers(token: accessToken),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
+    final response = await _send(
+      'POST',
+      '/grain-sales/procure',
+      accessToken: accessToken,
+      body: jsonEncode(payload),
+    );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final data = json['data'] as Map<String, dynamic>? ?? json;
-        return GrainSaleItem.fromJson(data);
-      }
-
-      _handleErrorResponse(response);
-    } on SocketException catch (_) {
-      throw const GrainSaleException(
-        message: 'Network connection unavailable. Please check your internet connection.',
-        isNetworkError: true,
-      );
-    } on TimeoutException catch (_) {
-      throw const GrainSaleException(
-        message: 'Server request timed out. Please try again later.',
-        isNetworkError: true,
-      );
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>? ?? json;
+      return GrainSaleItem.fromJson(data);
     }
+
+    _handleErrorResponse(response);
   }
 
   @override
   Future<GrainSaleItem> reviewGrainSale({
     required String accessToken,
     required String saleId,
-    required String bookingSlotId,
+    String? bookingSlotId,
     required double goodQuantityKg,
     required double badQuantityKg,
     bool approve = true,
     String? rejectionReason,
   }) async {
-    try {
-      final uri = _uri('/grain-sales/$saleId/review');
-      final payload = <String, dynamic>{
+    final payload = <String, dynamic>{
+      if (bookingSlotId != null && bookingSlotId.isNotEmpty)
         'booking_slot_id': bookingSlotId,
-        'good_quantity_kg': goodQuantityKg,
-        'bad_quantity_kg': badQuantityKg,
-        'approve': approve,
-        if (rejectionReason != null && rejectionReason.trim().isNotEmpty)
-          'rejection_reason': rejectionReason.trim(),
-      };
+      'good_quantity_kg': goodQuantityKg,
+      'bad_quantity_kg': badQuantityKg,
+      'approve': approve,
+      if (rejectionReason != null && rejectionReason.trim().isNotEmpty)
+        'rejection_reason': rejectionReason.trim(),
+    };
 
-      final response = await client
-          .patch(
-            uri,
-            headers: _headers(token: accessToken),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
+    final response = await _send(
+      'PATCH',
+      '/grain-sales/$saleId/review',
+      accessToken: accessToken,
+      body: jsonEncode(payload),
+    );
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final data = json['data'] as Map<String, dynamic>? ?? json;
-        return GrainSaleItem.fromJson(data);
-      }
-
-      _handleErrorResponse(response);
-    } on SocketException catch (_) {
-      throw const GrainSaleException(
-        message: 'Network connection unavailable. Please check your internet connection.',
-        isNetworkError: true,
-      );
-    } on TimeoutException catch (_) {
-      throw const GrainSaleException(
-        message: 'Server request timed out. Please try again later.',
-        isNetworkError: true,
-      );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>? ?? json;
+      return GrainSaleItem.fromJson(data);
     }
+
+    _handleErrorResponse(response);
   }
 
   @override
@@ -299,39 +334,25 @@ class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
     required String saleId,
     String? paymentReference,
   }) async {
-    try {
-      final uri = _uri('/grain-sales/$saleId/pay');
-      final payload = <String, dynamic>{};
-      if (paymentReference != null && paymentReference.trim().isNotEmpty) {
-        payload['payment_reference'] = paymentReference.trim();
-      }
-
-      final response = await client
-          .patch(
-            uri,
-            headers: _headers(token: accessToken),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
-
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final data = json['data'] as Map<String, dynamic>? ?? json;
-        return GrainSaleItem.fromJson(data);
-      }
-
-      _handleErrorResponse(response);
-    } on SocketException catch (_) {
-      throw const GrainSaleException(
-        message: 'Network connection unavailable. Please check your internet connection.',
-        isNetworkError: true,
-      );
-    } on TimeoutException catch (_) {
-      throw const GrainSaleException(
-        message: 'Server request timed out. Please try again later.',
-        isNetworkError: true,
-      );
+    final payload = <String, dynamic>{};
+    if (paymentReference != null && paymentReference.trim().isNotEmpty) {
+      payload['payment_reference'] = paymentReference.trim();
     }
+
+    final response = await _send(
+      'PATCH',
+      '/grain-sales/$saleId/pay',
+      accessToken: accessToken,
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>? ?? json;
+      return GrainSaleItem.fromJson(data);
+    }
+
+    _handleErrorResponse(response);
   }
 
   @override
@@ -341,39 +362,25 @@ class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
     required double goodMaterialKg,
     required double wastageKg,
   }) async {
-    try {
-      final uri = _uri('/grain-sales/$saleId/yield');
-      final payload = <String, dynamic>{
-        'good_material_kg': goodMaterialKg,
-        'wastage_kg': wastageKg,
-      };
+    final payload = <String, dynamic>{
+      'good_material_kg': goodMaterialKg,
+      'wastage_kg': wastageKg,
+    };
 
-      final response = await client
-          .patch(
-            uri,
-            headers: _headers(token: accessToken),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
+    final response = await _send(
+      'PATCH',
+      '/grain-sales/$saleId/yield',
+      accessToken: accessToken,
+      body: jsonEncode(payload),
+    );
 
-      if (response.statusCode == 200) {
-        final json = jsonDecode(response.body) as Map<String, dynamic>;
-        final data = json['data'] as Map<String, dynamic>? ?? json;
-        return GrainSaleItem.fromJson(data);
-      }
-
-      _handleErrorResponse(response);
-    } on SocketException catch (_) {
-      throw const GrainSaleException(
-        message: 'Network connection unavailable. Please check your internet connection.',
-        isNetworkError: true,
-      );
-    } on TimeoutException catch (_) {
-      throw const GrainSaleException(
-        message: 'Server request timed out. Please try again later.',
-        isNetworkError: true,
-      );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = json['data'] as Map<String, dynamic>? ?? json;
+      return GrainSaleItem.fromJson(data);
     }
+
+    _handleErrorResponse(response);
   }
 
   @override
@@ -381,8 +388,10 @@ class FastApiGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
     required String accessToken,
   }) async {
     try {
+      final token =
+          (await apiClient?.localDataSource.getAccessToken()) ?? accessToken;
       return await FarmerLookupService.fetch(
-        accessToken: accessToken,
+        accessToken: token,
         baseUrl: baseUrl,
         apiPrefix: apiPrefix,
         client: client,

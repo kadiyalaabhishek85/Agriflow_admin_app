@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 import '../../domain/entities/bank_change_request_item.dart';
 import '../../domain/entities/farmer_exception.dart';
 import '../../domain/entities/farmer_item.dart';
@@ -76,7 +77,7 @@ abstract class FarmerRemoteDataSource {
 
 /// FastAPI implementation of FarmerRemoteDataSource.
 class FastApiFarmerRemoteDataSource implements FarmerRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

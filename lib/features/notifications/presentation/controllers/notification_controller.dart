@@ -165,6 +165,13 @@ class NotificationController extends ChangeNotifier {
       _error = null;
     } catch (e) {
       if (_disposed) return;
+      final lower = e.toString().toLowerCase();
+      if (lower.contains('session expired') ||
+          lower.contains('401') ||
+          lower.contains('unauthorized')) {
+        stopPolling();
+        stopRealtime();
+      }
       // Only set error on first load failure
       if (isFirstLoad) {
         _error = e.toString().replaceAll('Exception: ', '');

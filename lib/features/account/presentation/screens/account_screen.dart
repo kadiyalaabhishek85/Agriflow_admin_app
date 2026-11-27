@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
+import '../../../../core/network/api_client.dart';
 import '../../../../core/network/error_sanitizer.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_toast.dart';
@@ -486,7 +487,7 @@ class _ChangePasswordSheetState extends State<_ChangePasswordSheet> {
     });
 
     final client = widget.httpClient ?? http.Client();
-    final uri = Uri.parse('https://agriflow-backend-t8o4.onrender.com/api/v1/auth/change-password');
+    final uri = Uri.parse('${ApiClient.defaultBaseUrl}/api/v1/auth/change-password');
 
     try {
       final response = await client
@@ -743,7 +744,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
 
     final client = widget.httpClient ?? http.Client();
     final uri = Uri.parse(
-      'https://agriflow-backend-t8o4.onrender.com/api/v1/users/me',
+      '${ApiClient.defaultBaseUrl}/api/v1/users/me',
     );
     final email = _emailController.text.trim();
 

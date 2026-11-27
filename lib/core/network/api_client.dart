@@ -17,7 +17,10 @@ import '../../features/auth/data/datasources/auth_local_data_source.dart';
 /// 2. Request deduplication/lock preventing infinite refresh loops.
 /// 3. Centralized header management with automatic Bearer token injection.
 class ApiClient {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://agriflow-backend-t8o4.onrender.com',
+  );
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

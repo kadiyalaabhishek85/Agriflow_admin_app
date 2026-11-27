@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 
 import '../../domain/entities/manager_item.dart';
 import '../../domain/entities/manager_pagination.dart';
@@ -17,8 +18,7 @@ import 'manager_remote_data_source.dart';
 /// - `PATCH /api/v1/managers/{manager_id}/status`           → SuccessResponse[ManagerPublic]
 /// - `POST  /api/v1/managers/{manager_id}/reset-password`   → MessageResponse
 class FastApiManagerRemoteDataSource implements ManagerRemoteDataSource {
-  static const String defaultBaseUrl =
-      'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

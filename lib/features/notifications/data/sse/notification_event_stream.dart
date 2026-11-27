@@ -162,7 +162,14 @@ class NotificationEventStream {
       try {
         await _connectOnce(epoch);
         failures = 0;
-      } catch (_) {
+      } catch (e) {
+        final lower = e.toString().toLowerCase();
+        if (lower.contains('session expired') ||
+            lower.contains('401') ||
+            lower.contains('session_expired')) {
+          stop();
+          break;
+        }
         if (!_active || _disposed || epoch != _epoch) break;
         failures++;
       }

@@ -112,7 +112,7 @@ class _MockGrainSaleRemoteDataSource implements GrainSaleRemoteDataSource {
   Future<GrainSaleItem> reviewGrainSale({
     required String accessToken,
     required String saleId,
-    required String bookingSlotId,
+    String? bookingSlotId,
     required double goodQuantityKg,
     required double badQuantityKg,
     bool approve = true,
@@ -656,7 +656,7 @@ void main() {
       expect(item.status, 'approved');
     });
 
-    test('review with no booking throws the guard message and makes no review call', () async {
+    test('review with no booking succeeds and sends null booking_slot_id', () async {
       mockRemoteDataSource.salesToReturn = [
         _createSampleSale(id: 's-nobk', status: 'received'),
       ];
@@ -664,22 +664,16 @@ void main() {
         _createBooking(id: 'b-other', grainSaleId: 's-someone-else'),
       ];
 
-      await expectLater(
-        repository.reviewGrainSale(
-          accessToken: 'valid-token',
-          saleId: 's-nobk',
-          goodQuantityKg: 100.0,
-          badQuantityKg: 5.0,
-        ),
-        throwsA(
-          isA<GrainSaleException>().having(
-            (e) => e.message,
-            'message',
-            'This grain sale is not associated with a booking slot and cannot be reviewed yet.',
-          ),
-        ),
+      final item = await repository.reviewGrainSale(
+        accessToken: 'valid-token',
+        saleId: 's-nobk',
+        goodQuantityKg: 100.0,
+        badQuantityKg: 5.0,
       );
-      expect(mockRemoteDataSource.reviewCallCount, 0);
+
+      expect(mockRemoteDataSource.reviewCallCount, 1);
+      expect(mockRemoteDataSource.lastBookingSlotId, isNull);
+      expect(item.status, 'approved');
     });
 
     test('payGrainSale delegates to remote data source', () async {
@@ -873,7 +867,7 @@ void main() {
       expect(controller.errorMessage, 'Invalid inspection yield');
     });
 
-    test('review with no resolvable booking returns false, sets guard message, and makes no review call', () async {
+    test('review with no resolvable booking still succeeds with null booking_slot_id', () async {
       mockRemoteDataSource.salesToReturn = [
         _createSampleSale(id: 's-no-booking', status: 'received'),
       ];
@@ -884,13 +878,11 @@ void main() {
         approve: true,
       );
 
-      expect(success, isFalse);
-      expect(
-        controller.errorMessage,
-        'This grain sale is not associated with a booking slot and cannot be reviewed yet.',
-      );
-      expect(mockRemoteDataSource.reviewCallCount, 0);
-      expect(controller.sales.first.status, 'received');
+      expect(success, isTrue);
+      expect(controller.errorMessage, isNull);
+      expect(mockRemoteDataSource.reviewCallCount, 1);
+      expect(mockRemoteDataSource.lastBookingSlotId, isNull);
+      expect(controller.sales.first.status, 'approved');
     });
 
     test('setFilter sends truthful single status values and all sends null', () async {
@@ -901,23 +893,27 @@ void main() {
       ];
 
       await controller.loadSales();
-      expect(mockRemoteDataSource.statusesRequested.last, isNull);
+      expect(mockRemoteDataSource.statusesRequested.first, isNull);
 
+      mockRemoteDataSource.statusesRequested.clear();
       controller.setFilter('pending');
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(mockRemoteDataSource.statusesRequested.last, 'pending');
+      expect(mockRemoteDataSource.statusesRequested.first, 'pending');
 
+      mockRemoteDataSource.statusesRequested.clear();
       controller.setFilter('received');
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(mockRemoteDataSource.statusesRequested.last, 'received');
+      expect(mockRemoteDataSource.statusesRequested.first, 'received');
 
+      mockRemoteDataSource.statusesRequested.clear();
       controller.setFilter('paid');
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(mockRemoteDataSource.statusesRequested.last, 'paid');
+      expect(mockRemoteDataSource.statusesRequested.first, 'paid');
 
+      mockRemoteDataSource.statusesRequested.clear();
       controller.setFilter('all');
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(mockRemoteDataSource.statusesRequested.last, isNull);
+      expect(mockRemoteDataSource.statusesRequested.first, isNull);
       expect(controller.currentFilter, 'all');
     });
 
@@ -1361,7 +1357,7 @@ void main() {
       expect(find.text('Log Crop'), findsOneWidget);
     });
 
-    testWidgets('filter chips render All Pending Received Paid without counts', (tester) async {
+    testWidgets('filter chips render All, Pending, Received, Approved, Rejected, Paid with eager counts', (tester) async {
       mockRemoteDataSource.salesToReturn = [
         _createSampleSale(id: 'gs-chip-1', status: 'approved'),
       ];
@@ -1385,7 +1381,72 @@ void main() {
       expect(find.byKey(const Key('grain_chip_rejected')), findsOneWidget);
       expect(find.byKey(const Key('grain_chip_paid')), findsOneWidget);
       expect(find.text('Pending / Received'), findsNothing);
-      expect(find.textContaining(RegExp(r'\(\d+\)')), findsNothing);
+      expect(find.text('All (1)'), findsOneWidget);
+      expect(find.text('Approved (1)'), findsOneWidget);
+      expect(find.text('Rejected (0)'), findsOneWidget);
+    });
+
+    testWidgets('LogReceivedCropSheet shows inline error when Good + Wastage does not equal Raw', (tester) async {
+      bool submitted = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: LogReceivedCropSheet(
+              farmers: {
+                'farmer-1': (name: 'Devendra Gowda', phone: '9876543210', village: 'Navalgund'),
+              },
+              isSubmitting: false,
+              onSubmit: ({
+                required String farmerId,
+                required String grainType,
+                required String grade,
+                required double rawMaterialKg,
+                required double goodMaterialKg,
+                required double wastageKg,
+              }) async {
+                submitted = true;
+                return true;
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final fields = find.byType(TextFormField);
+      await tester.enterText(fields.at(0), '1');
+      await tester.enterText(fields.at(1), '2');
+      await tester.enterText(fields.at(2), '1.0');
+      await tester.pump();
+
+      await tester.tap(find.text('Save Procurement Entry'));
+      await tester.pumpAndSettle();
+
+      expect(submitted, isFalse);
+      expect(
+        find.text(
+          'Good Quantity (2.0) + Wastage (1.0) must equal Raw Quantity (1.0).',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    test('previewSearch and setSearchQuery filter sales locally without dropping rapid searches', () async {
+      mockRemoteDataSource.salesToReturn = [
+        _createSampleSale(id: 's-asha', farmerId: 'f-1', farmerName: 'Asha', grainType: 'Maize'),
+        _createSampleSale(id: 's-pm', farmerId: 'f-2', farmerName: 'PM Farmer', grainType: 'Paddy'),
+      ];
+      await controller.loadSales();
+      expect(controller.sales.length, 2);
+
+      controller.previewSearch('asha');
+      expect(controller.sales.length, 1);
+      expect(controller.sales.first.displayFarmerName, 'Asha');
+
+      controller.setSearchQuery('asha');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(controller.sales.length, 1);
+      expect(controller.sales.first.id, 's-asha');
     });
 
     testWidgets('tapping Approved chip requests approved status from data source',

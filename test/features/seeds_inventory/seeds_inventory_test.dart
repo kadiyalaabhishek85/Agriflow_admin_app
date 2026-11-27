@@ -762,10 +762,11 @@ void main() {
       expect(controller.isLoading, isFalse);
       expect(controller.allSeeds.length, 3);
       expect(controller.warehouses.length, 4);
-      expect(controller.totalSeedsCount, 2);
+      expect(controller.totalSeedsCount, 3);
       expect(controller.activeSeedsCount, 2);
+      expect(controller.inactiveSeedsCount, 1);
       expect(controller.lowStockCount, 1);
-      expect(controller.filteredSeeds.length, 2);
+      expect(controller.filteredSeeds.length, 3);
     });
 
     test('search query filters reactively by name, variety, and warehouse', () async {
@@ -783,7 +784,7 @@ void main() {
 
       // Clear search
       controller.setSearchQuery('');
-      expect(controller.filteredSeeds.length, 2);
+      expect(controller.filteredSeeds.length, 3);
     });
 
     test('filter tabs filter by active and low-stock states', () async {
@@ -797,7 +798,7 @@ void main() {
       expect(controller.filteredSeeds.first.name, 'Cotton Bt');
 
       controller.setFilter('all');
-      expect(controller.filteredSeeds.length, 2);
+      expect(controller.filteredSeeds.length, 3);
 
       controller.setFilter('inactive');
       expect(controller.filteredSeeds.length, 1);
@@ -819,7 +820,8 @@ void main() {
       );
 
       expect(ok, isTrue);
-      expect(controller.totalSeedsCount, 3);
+      expect(controller.totalSeedsCount, 4);
+      expect(controller.activeSeedsCount, 3);
       final newlyAdded = controller.allSeeds.first;
       expect(newlyAdded.name, 'Wheat Sharbati');
       expect(newlyAdded.priceGradeA, 48.0);
@@ -850,22 +852,22 @@ void main() {
     test('deleteSeed performs soft-delete, updates active count, and filters correctly', () async {
       await controller.loadSeeds();
 
-      expect(controller.totalSeedsCount, 2);
+      expect(controller.totalSeedsCount, 3);
       expect(controller.activeSeedsCount, 2);
       expect(controller.inactiveSeedsCount, 1);
 
       final ok = await controller.deleteSeed('s-2');
 
       expect(ok, isTrue);
-      expect(controller.totalSeedsCount, 1);
+      expect(controller.totalSeedsCount, 3);
       expect(controller.activeSeedsCount, 1);
       expect(controller.inactiveSeedsCount, 2);
       expect(controller.allSeeds.firstWhere((s) => s.id == 's-2').isActive, isFalse);
 
-      // Verify 'all' tab excludes soft-deleted seed
+      // Verify 'all' tab still shows total seeds (active + inactive)
       controller.setFilter('all');
-      expect(controller.filteredSeeds.length, 1);
-      expect(controller.filteredSeeds.any((s) => s.id == 's-2'), isFalse);
+      expect(controller.filteredSeeds.length, 3);
+      expect(controller.filteredSeeds.any((s) => s.id == 's-2'), isTrue);
 
       // Verify 'active' tab excludes soft-deleted seed
       controller.setFilter('active');
@@ -884,13 +886,13 @@ void main() {
 
       // Verify refresh preserves the soft-deleted state
       await controller.loadSeeds(refresh: true);
-      expect(controller.totalSeedsCount, 1);
+      expect(controller.totalSeedsCount, 3);
       expect(controller.activeSeedsCount, 1);
       expect(controller.inactiveSeedsCount, 2);
       expect(controller.allSeeds.firstWhere((s) => s.id == 's-2').isActive, isFalse);
 
       controller.setFilter('all');
-      expect(controller.filteredSeeds.any((s) => s.id == 's-2'), isFalse);
+      expect(controller.filteredSeeds.length, 3);
 
       controller.setFilter('active');
       expect(controller.filteredSeeds.any((s) => s.id == 's-2'), isFalse);
@@ -1065,15 +1067,15 @@ void main() {
       );
       await tester.pump();
 
-      // Check filter chips (All shows active count: 1)
-      expect(find.text('All (1)'), findsOneWidget);
+      // Check filter chips (All shows total count: 2)
+      expect(find.text('All (2)'), findsOneWidget);
       expect(find.text('Active (1)'), findsOneWidget);
       expect(find.text('Low Stock (1)'), findsOneWidget);
       expect(find.text('Inactive (1)'), findsOneWidget);
 
-      // Default 'All' view shows only active seeds
+      // Default 'All' view shows both active and inactive seeds
       expect(find.text('Paddy BPT-5204'), findsOneWidget);
-      expect(find.text('Cotton Super-9'), findsNothing);
+      expect(find.text('Cotton Super-9'), findsOneWidget);
 
       // Tap Inactive chip
       await tester.tap(find.text('Inactive (1)'));
@@ -1771,6 +1773,154 @@ void main() {
         expect(find.textContaining('boom'), findsNothing);
         expect(find.textContaining('StateError'), findsNothing);
         expect(find.text('Uploading...'), findsNothing);
+      });
+    });
+
+    group('Inactive->Active edit, inline errors, and narrow layout', () {
+      testWidgets('AddEditSeedSheet renders without overflow on 320px width and shows errorProvider message on failed submit',
+          (tester) async {
+        tester.view.physicalSize = const Size(320, 568);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        bool? submittedActive;
+        String? controllerError;
+
+        final inactiveSeed = SeedInventoryItem.fromJson(const {
+          'id': 'seed-inactive-1',
+          'name': 'Bajra Hybrid',
+          'crop_type': 'Other',
+          'variety': 'seeds',
+          'price_per_kg': 290.0,
+          'stock_kg': 7400.0,
+          'is_active': false,
+        });
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: AddEditSeedSheet(
+                seed: inactiveSeed,
+                errorProvider: () => controllerError,
+                onAdd: ({
+                  required name,
+                  required pricePerKg,
+                  required stockKg,
+                  cropType,
+                  variety,
+                  priceGradeA,
+                  priceGradeB,
+                  priceGradeC,
+                  maxOrderQuantityKg,
+                  warehouseIds,
+                  description,
+                  imageUrl,
+                }) async =>
+                    false,
+                onEdit: ({
+                  required seedId,
+                  name,
+                  cropType,
+                  variety,
+                  pricePerKg,
+                  priceGradeA,
+                  priceGradeB,
+                  priceGradeC,
+                  maxOrderQuantityKg,
+                  stockKg,
+                  warehouseIds,
+                  description,
+                  imageUrl,
+                  isActive,
+                }) async {
+                  submittedActive = isActive;
+                  controllerError = 'Session expired. Please log in again.';
+                  return false;
+                },
+                onUploadImage: ({
+                  required fileBytes,
+                  required fileName,
+                  required contentType,
+                }) async =>
+                    null,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+
+        final switchFinder = find.byType(Switch);
+        await tester.ensureVisible(switchFinder);
+        await tester.tap(switchFinder);
+        await tester.pump();
+
+        final saveFinder = find.text('Save Changes');
+        await tester.ensureVisible(saveFinder);
+        await tester.tap(saveFinder);
+        await tester.pumpAndSettle();
+
+        expect(submittedActive, isTrue);
+        expect(find.text('Session expired. Please log in again.'), findsWidgets);
+        expect(tester.takeException(), isNull);
+      });
+
+      testWidgets('SeedsInventoryScreen keeps All, Active, Low Stock, Inactive chips on one line at 360px width',
+          (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final items = [
+          for (int i = 0; i < 8; i++)
+            SeedInventoryItem.fromJson({
+              'id': 'active-$i',
+              'name': 'Active Seed $i',
+              'price_per_kg': 70.0,
+              'stock_kg': 1000.0,
+              'is_active': true,
+            }),
+          for (int i = 0; i < 27; i++)
+            SeedInventoryItem.fromJson({
+              'id': 'inactive-$i',
+              'name': 'Inactive Seed $i',
+              'price_per_kg': 70.0,
+              'stock_kg': 1000.0,
+              'is_active': false,
+            }),
+        ];
+        final repo = MockSeedsInventoryRepository()..seeds = items;
+        final ctrl = SeedsInventoryController(
+          repository: repo,
+          accessToken: 'token',
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: SeedsInventoryScreen(
+              controller: ctrl,
+              isAdmin: true,
+              onBack: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final allChip = tester.getCenter(find.text('All (35)'));
+        final activeChip = tester.getCenter(find.text('Active (8)'));
+        final lowStockChip = tester.getCenter(find.text('Low Stock (0)'));
+        final inactiveChip = tester.getCenter(find.text('Inactive (27)'));
+
+        expect((allChip.dy - activeChip.dy).abs(), lessThan(2.0));
+        expect((activeChip.dy - lowStockChip.dy).abs(), lessThan(2.0));
+        expect((lowStockChip.dy - inactiveChip.dy).abs(), lessThan(2.0));
+        expect(tester.takeException(), isNull);
       });
     });
   });

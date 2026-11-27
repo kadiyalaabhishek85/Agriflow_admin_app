@@ -33,7 +33,7 @@ class DashboardMetricCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppColors.radiusMd),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
             color: AppColors.surface,
             borderRadius: BorderRadius.circular(AppColors.radiusMd),
@@ -45,13 +45,13 @@ class DashboardMetricCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icon Container
+              // Icon Container matching HTML .stat-icon
               Container(
-                width: 32,
-                height: 32,
+                width: 34,
+                height: 34,
                 decoration: BoxDecoration(
                   color: iconBgColor,
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Center(
                   child: Icon(
@@ -62,32 +62,32 @@ class DashboardMetricCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              // Value
+              // Value matching HTML .stat-val (Fraunces 21px w800)
               Text(
                 value,
-                style: AppTypography.titleLarge(
+                style: AppTypography.displayMedium(
                   color: AppColors.text,
-                ).copyWith(fontWeight: FontWeight.w800),
+                ).copyWith(fontSize: 21, fontWeight: FontWeight.w800),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 2),
-              // Label
+              // Label matching HTML .stat-label
               Text(
                 label,
                 style: AppTypography.bodySmall(
                   color: AppColors.textMuted,
-                ),
+                ).copyWith(fontSize: 11, fontWeight: FontWeight.w700),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
               if (deltaText != null && deltaText!.isNotEmpty) ...[
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 Text(
                   deltaText!,
                   style: AppTypography.caption(
                     color: deltaColor ?? AppColors.canopyDeep,
-                  ).copyWith(fontWeight: FontWeight.w600),
+                  ).copyWith(fontSize: 10.5, fontWeight: FontWeight.w800),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),

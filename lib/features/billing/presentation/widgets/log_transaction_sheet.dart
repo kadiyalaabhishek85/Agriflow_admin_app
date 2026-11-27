@@ -3,26 +3,38 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/sheet_drag_handle.dart';
 
+typedef SubmitTransactionCallback = Future<String?> Function({
+  required String farmerId,
+  required double amount,
+  required String direction,
+  required String referenceType,
+  String? description,
+});
+
 /// Modal bottom sheet for "+ Add Bill / Record Transaction".
-/// Note: POST /api/v1/transactions is currently not implemented in FastAPI.
-/// This sheet is gated with a clear notice for Syed.
 class LogTransactionSheet extends StatefulWidget {
   final Map<String, ({String name, String phone, String? village})> farmers;
+  final SubmitTransactionCallback? onSubmit;
 
   const LogTransactionSheet({
     super.key,
     required this.farmers,
+    this.onSubmit,
   });
 
-  static Future<void> show(
+  static Future<bool?> show(
     BuildContext context, {
     required Map<String, ({String name, String phone, String? village})> farmers,
+    SubmitTransactionCallback? onSubmit,
   }) {
-    return showModalBottomSheet<void>(
+    return showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => LogTransactionSheet(farmers: farmers),
+      builder: (ctx) => LogTransactionSheet(
+        farmers: farmers,
+        onSubmit: onSubmit,
+      ),
     );
   }
 
@@ -36,12 +48,60 @@ class _LogTransactionSheetState extends State<LogTransactionSheet> {
   String _direction = 'credit';
   final _amountController = TextEditingController();
   final _descriptionController = TextEditingController();
+  bool _isSubmitting = false;
+  String? _errorText;
 
   @override
   void dispose() {
     _amountController.dispose();
     _descriptionController.dispose();
     super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_isSubmitting) return;
+
+    final farmerId = _selectedFarmerId;
+    if (farmerId == null || !widget.farmers.containsKey(farmerId)) {
+      setState(() => _errorText = 'Please select a farmer account.');
+      return;
+    }
+
+    final parsedAmount = double.tryParse(_amountController.text.trim());
+    if (parsedAmount == null || parsedAmount <= 0) {
+      setState(() => _errorText = 'Please enter a valid amount greater than ₹0.');
+      return;
+    }
+
+    final onSubmit = widget.onSubmit;
+    if (onSubmit == null) {
+      setState(() => _errorText = 'Transaction submission is not configured.');
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+      _errorText = null;
+    });
+
+    final desc = _descriptionController.text.trim();
+    final err = await onSubmit(
+      farmerId: farmerId,
+      amount: parsedAmount,
+      direction: _direction,
+      referenceType: _referenceType,
+      description: desc.isEmpty ? null : desc,
+    );
+
+    if (!mounted) return;
+    if (err == null) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _isSubmitting = false;
+        _errorText = err;
+      });
+    }
   }
 
   @override
@@ -119,47 +179,6 @@ class _LogTransactionSheetState extends State<LogTransactionSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Backend Notice Banner
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.warnBg,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.warn.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.lock_clock_rounded, size: 20, color: AppColors.warn),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Backend API required — to be supplied by Syed.',
-                          style: GoogleFonts.manrope(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.warn,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Manual bill creation (POST /api/v1/transactions) is pending backend addition. Automatic transaction entries are generated through Grain Sales and Seed Purchases.',
-                          style: GoogleFonts.manrope(
-                            fontSize: 11,
-                            color: AppColors.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-
             // Farmer Selector
             Text(
               'Select Farmer',
@@ -180,23 +199,33 @@ class _LogTransactionSheetState extends State<LogTransactionSheet> {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   isExpanded: true,
-                  value: _selectedFarmerId,
+                  value: widget.farmers.containsKey(_selectedFarmerId) ? _selectedFarmerId : null,
                   hint: Text(
-                    'Choose farmer account...',
+                    widget.farmers.isEmpty
+                        ? 'No farmer accounts available'
+                        : 'Choose farmer account...',
                     style: GoogleFonts.manrope(fontSize: 13, color: AppColors.textFaint),
                   ),
                   items: widget.farmers.entries.map((e) {
                     return DropdownMenuItem<String>(
                       value: e.key,
                       child: Text(
-                        '${e.value.name} (${e.value.phone})',
+                        e.value.phone.isNotEmpty
+                            ? '${e.value.name} (${e.value.phone})'
+                            : e.value.name,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.manrope(fontSize: 13, color: AppColors.text),
                       ),
                     );
                   }).toList(),
-                  onChanged: (val) {
-                    setState(() => _selectedFarmerId = val);
-                  },
+                  onChanged: _isSubmitting
+                      ? null
+                      : (val) {
+                          setState(() {
+                            _selectedFarmerId = val;
+                            _errorText = null;
+                          });
+                        },
                 ),
               ),
             ),
@@ -336,22 +365,61 @@ class _LogTransactionSheetState extends State<LogTransactionSheet> {
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
 
-            // Submit Button (Gated & Disabled)
+            if (_errorText != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.badBg,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.bad.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline_rounded, size: 18, color: AppColors.bad),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorText!,
+                        style: GoogleFonts.manrope(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.bad,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+
+            // Submit Button
             ElevatedButton(
-              onPressed: null, // Disabled pending backend implementation
+              onPressed: _isSubmitting ? null : _submit,
               style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.canopy,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
-              child: Text(
-                'Submit Record (Pending Backend API)',
-                style: GoogleFonts.manrope(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : Text(
+                      'Submit Record',
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
             ),
           ],
         ),

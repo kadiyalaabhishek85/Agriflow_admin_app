@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
+import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import '../../domain/entities/billing_exception.dart';
 import '../../domain/entities/billing_pagination.dart';
 import '../../domain/entities/billing_transaction_item.dart';
@@ -9,17 +11,60 @@ import 'billing_remote_data_source.dart';
 
 /// FastAPI implementation of BillingRemoteDataSource.
 class FastApiBillingRemoteDataSource implements BillingRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;
   final http.Client client;
+  final ApiClient? apiClient;
 
   FastApiBillingRemoteDataSource({
     String? baseUrl,
     http.Client? client,
+    this.apiClient,
   })  : baseUrl = baseUrl ?? defaultBaseUrl,
         client = client ?? http.Client();
+
+  Future<http.Response> _send(
+    String method,
+    String path, {
+    required String accessToken,
+    Map<String, dynamic>? queryParameters,
+    Object? body,
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    final uri = _uri(path, queryParameters);
+    try {
+      final authClient = apiClient;
+      if (authClient != null) {
+        switch (method) {
+          case 'GET':
+            return await authClient.get(uri, timeout: timeout);
+          case 'POST':
+            return await authClient.post(uri, body: body, timeout: timeout);
+          case 'PATCH':
+            return await authClient.patch(uri, body: body, timeout: timeout);
+        }
+      }
+      final headers = _headers(token: accessToken);
+      switch (method) {
+        case 'GET':
+          return await client.get(uri, headers: headers).timeout(timeout);
+        case 'POST':
+          return await client.post(uri, headers: headers, body: body).timeout(timeout);
+        case 'PATCH':
+          return await client.patch(uri, headers: headers, body: body).timeout(timeout);
+        default:
+          throw UnsupportedError('Unsupported HTTP method: $method');
+      }
+    } on AuthException catch (e) {
+      throw BillingException(
+        message: e.message,
+        statusCode: e.statusCode ?? (e.errorCode == 'SESSION_EXPIRED' ? 401 : null),
+        isNetworkError: e.isNetworkError,
+      );
+    }
+  }
 
   Uri _uri(String path, [Map<String, dynamic>? queryParameters]) {
     final base = Uri.parse('$baseUrl$apiPrefix$path');
@@ -134,10 +179,12 @@ class FastApiBillingRemoteDataSource implements BillingRemoteDataSource {
         query['order'] = order;
       }
 
-      final uri = _uri('/transactions', query);
-      final response = await client
-          .get(uri, headers: _headers(token: accessToken))
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'GET',
+        '/transactions',
+        accessToken: accessToken,
+        queryParameters: query,
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -168,25 +215,70 @@ class FastApiBillingRemoteDataSource implements BillingRemoteDataSource {
   }
 
   @override
+  Future<BillingTransactionItem> createTransaction({
+    required String accessToken,
+    required String farmerId,
+    required double amount,
+    required String direction,
+    required String referenceType,
+    String? description,
+  }) async {
+    try {
+      final payload = <String, dynamic>{
+        'farmer_id': farmerId,
+        'amount': amount.toStringAsFixed(2),
+        'direction': direction.trim().toLowerCase(),
+        'reference_type': referenceType.trim().toLowerCase(),
+      };
+      if (description != null && description.trim().isNotEmpty) {
+        payload['description'] = description.trim();
+      }
+
+      final response = await _send(
+        'POST',
+        '/transactions',
+        accessToken: accessToken,
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        final json = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = json['data'] as Map<String, dynamic>? ?? json;
+        return BillingTransactionItem.fromJson(data);
+      }
+
+      _handleErrorResponse(response);
+    } on SocketException catch (_) {
+      throw const BillingException(
+        message: 'Network connection unavailable. Please check your internet connection.',
+        isNetworkError: true,
+      );
+    } on TimeoutException catch (_) {
+      throw const BillingException(
+        message: 'Server request timed out. Please try again later.',
+        isNetworkError: true,
+      );
+    }
+  }
+
+  @override
   Future<BillingTransactionItem> payTransaction({
     required String accessToken,
     required String transactionId,
     String? description,
   }) async {
     try {
-      final uri = _uri('/transactions/$transactionId/pay');
       final payload = <String, dynamic>{};
       if (description != null && description.trim().isNotEmpty) {
         payload['description'] = description.trim();
       }
 
-      final response = await client
-          .patch(
-            uri,
-            headers: _headers(token: accessToken),
-            body: jsonEncode(payload),
-          )
-          .timeout(const Duration(seconds: 15));
+      final response = await _send(
+        'PATCH',
+        '/transactions/$transactionId/pay',
+        accessToken: accessToken,
+        body: jsonEncode(payload),
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;
@@ -213,10 +305,13 @@ class FastApiBillingRemoteDataSource implements BillingRemoteDataSource {
     required String accessToken,
   }) async {
     try {
-      final uri = _uri('/farmers', {'page': 1, 'page_size': 100});
-      final response = await client
-          .get(uri, headers: _headers(token: accessToken))
-          .timeout(const Duration(seconds: 10));
+      final response = await _send(
+        'GET',
+        '/farmers',
+        accessToken: accessToken,
+        queryParameters: {'page': 1, 'page_size': 100},
+        timeout: const Duration(seconds: 10),
+      );
 
       if (response.statusCode == 200) {
         final json = jsonDecode(response.body) as Map<String, dynamic>;

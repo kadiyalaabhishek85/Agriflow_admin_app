@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -27,6 +28,7 @@ class FarmVisitScreen extends StatefulWidget {
 class _FarmVisitScreenState extends State<FarmVisitScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   static const List<({String label, String value})> _filters = [
     (label: 'All', value: 'all'),
@@ -49,10 +51,22 @@ class _FarmVisitScreenState extends State<FarmVisitScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() {});
+    widget.controller.previewSearch(val);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.controller.setSearchQuery(val);
+      }
+    });
   }
 
   void _onScroll() {
@@ -302,7 +316,11 @@ class _FarmVisitScreenState extends State<FarmVisitScreen> {
         ),
         child: TextField(
           controller: _searchController,
-          onSubmitted: (query) => widget.controller.setSearchQuery(query),
+          onChanged: _onSearchChanged,
+          onSubmitted: (query) {
+            _searchDebounce?.cancel();
+            widget.controller.setSearchQuery(query);
+          },
           textInputAction: TextInputAction.search,
           style: AppTypography.bodyMedium(color: AppColors.text),
           decoration: InputDecoration(
@@ -313,7 +331,9 @@ class _FarmVisitScreenState extends State<FarmVisitScreen> {
                 ? IconButton(
                     icon: const Icon(Icons.clear, size: 18, color: AppColors.textMuted),
                     onPressed: () {
+                      _searchDebounce?.cancel();
                       _searchController.clear();
+                      setState(() {});
                       widget.controller.setSearchQuery('');
                     },
                   )

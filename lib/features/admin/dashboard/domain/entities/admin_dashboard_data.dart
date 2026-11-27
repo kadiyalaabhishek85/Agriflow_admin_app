@@ -23,11 +23,24 @@ class AdminAuditItem {
     if (json['created_at'] != null) {
       dt = DateTime.tryParse(json['created_at'].toString());
     }
+    String? details = json['details']?.toString();
+    if (details == null || details.trim().isEmpty) {
+      final entity = json['entity_type']?.toString();
+      final newVal = json['new_value'];
+      final parts = <String>[
+        if (entity != null && entity.isNotEmpty) entity,
+        if (newVal is Map && newVal.isNotEmpty)
+          newVal.entries.take(2).map((e) => '${e.key}: ${e.value}').join(', '),
+      ];
+      if (parts.isNotEmpty) {
+        details = parts.join(' · ');
+      }
+    }
     return AdminAuditItem(
       id: (json['id'] ?? '').toString(),
       action: (json['action'] ?? json['event'] ?? 'Activity').toString(),
       entityType: json['entity_type']?.toString(),
-      details: json['details']?.toString(),
+      details: details,
       createdAt: dt,
       userName: json['user_name'] ?? json['user']?['name'],
     );
@@ -55,6 +68,9 @@ class AdminDashboardData {
   final List<MonthlyChartPoint> monthlyPoints;
   final List<MandiRateItem> mandiRates;
   final List<AdminAuditItem> recentAuditLogs;
+  final List<String> sectionWarnings;
+  final bool visitsFetchFailed;
+  final bool warehousesFetchFailed;
 
   const AdminDashboardData({
     required this.totalFarmers,
@@ -77,6 +93,9 @@ class AdminDashboardData {
     this.monthlyPoints = const [],
     this.mandiRates = const [],
     this.recentAuditLogs = const [],
+    this.sectionWarnings = const [],
+    this.visitsFetchFailed = false,
+    this.warehousesFetchFailed = false,
   });
 
   factory AdminDashboardData.fromJson({
@@ -86,6 +105,9 @@ class AdminDashboardData {
     List<AdminAuditItem> recentAuditLogs = const [],
     int totalVisits = 0,
     int activeWarehouses = 0,
+    List<String> sectionWarnings = const [],
+    bool visitsFetchFailed = false,
+    bool warehousesFetchFailed = false,
   }) {
     double parseD(dynamic v) {
       if (v == null) return 0.0;
@@ -120,6 +142,9 @@ class AdminDashboardData {
       monthlyPoints: monthlyPoints,
       mandiRates: mandiRates,
       recentAuditLogs: recentAuditLogs,
+      sectionWarnings: sectionWarnings,
+      visitsFetchFailed: visitsFetchFailed,
+      warehousesFetchFailed: warehousesFetchFailed,
     );
   }
 }

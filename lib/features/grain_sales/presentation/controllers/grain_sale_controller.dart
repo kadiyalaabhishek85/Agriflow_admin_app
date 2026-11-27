@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../data/repositories/grain_sale_repository_impl.dart';
 import '../../domain/entities/grain_sale_exception.dart';
 import '../../domain/entities/grain_sale_item.dart';
 import '../../domain/entities/grain_sale_pagination.dart';
@@ -29,10 +31,25 @@ class GrainSaleController extends ChangeNotifier {
   String? _errorMessage;
 
   String _searchQuery = '';
+  String _liveQuery = '';
+  bool _clientFiltered = false;
+  int _loadEpoch = 0;
   String _currentFilter = 'all'; // 'all', 'pending', 'received', 'approved', 'rejected', 'paid'
   Map<String, ({String name, String phone, String? village})> _farmers = {};
 
-  List<GrainSaleItem> get sales => List.unmodifiable(_sales);
+  final Map<String, int> _statusCounts = {};
+  int _countsEpoch = 0;
+
+  List<GrainSaleItem> get sales {
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isEmpty) {
+      return List.unmodifiable(_sales);
+    }
+    return List.unmodifiable(
+      _sales.where((item) => _matchesQuery(item, activeQuery)),
+    );
+  }
+
   GrainSalePagination get pagination => _pagination;
   bool get isLoading => _isLoading;
   bool get isRefreshing => _isRefreshing;
@@ -43,9 +60,63 @@ class GrainSaleController extends ChangeNotifier {
   String get currentFilter => _currentFilter;
   Map<String, ({String name, String phone, String? village})> get farmers => _farmers;
 
-  /// Loads initial page of grain sales
+  /// Returns cached total count for a status filter chip (`all`, `pending`,
+  /// `received`, `approved`, `rejected`, `paid`), or active total if loaded.
+  int? countForFilter(String filter) {
+    final key = filter.toLowerCase();
+    if (key == _currentFilter && !_isLoading && _errorMessage == null) {
+      final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+      if (activeQuery.isNotEmpty && (_clientFiltered || _liveQuery != _searchQuery)) {
+        return sales.length;
+      }
+      return _pagination.total;
+    }
+    return _statusCounts[key];
+  }
+
+  bool _matchesQuery(GrainSaleItem item, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.displayFarmerName.toLowerCase().contains(q) ||
+        (item.enrichedFarmerPhone ?? '').toLowerCase().contains(q) ||
+        item.displayVillage.toLowerCase().contains(q) ||
+        item.grainType.toLowerCase().contains(q) ||
+        item.grade.toLowerCase().contains(q) ||
+        item.status.toLowerCase().contains(q) ||
+        item.id.toLowerCase().contains(q);
+  }
+
+  /// Filters already-loaded grain sales immediately while user types.
+  void previewSearch(String query) {
+    final normalized = query.trim();
+    if (_liveQuery == normalized) return;
+    _liveQuery = normalized;
+    notifyListeners();
+  }
+
+  Future<void> _refreshStatusCounts({
+    required String searchSnapshot,
+    required Map<String, int> known,
+  }) async {
+    final repo = repository;
+    if (repo is! GrainSaleRepositoryImpl) return;
+    final epoch = ++_countsEpoch;
+    final counts = await repo.getStatusCounts(
+      accessToken: accessToken,
+      search: searchSnapshot,
+      seedKnown: known,
+    );
+    if (epoch != _countsEpoch) return;
+    _statusCounts
+      ..clear()
+      ..addAll(counts);
+    notifyListeners();
+  }
+
+  /// Loads initial page of grain sales (supersedes any older in-flight search/filter load).
   Future<void> loadSales({bool refresh = false}) async {
-    if (_isLoading) return;
+    final epoch = ++_loadEpoch;
+    _clientFiltered = false;
 
     if (refresh) {
       _isRefreshing = true;
@@ -64,17 +135,62 @@ class GrainSaleController extends ChangeNotifier {
         status: _currentFilter != 'all' ? _currentFilter : null,
       );
 
-      _sales = List.from(result.items);
-      _pagination = result.pagination;
+      if (epoch != _loadEpoch) return;
+
+      final allItems = List<GrainSaleItem>.from(result.items);
+      var latestPagination = result.pagination;
+
+      // Client-side completeness fallback when backend returns rows outside query.
+      if (_searchQuery.isNotEmpty &&
+          allItems.any((item) => !_matchesQuery(item, _searchQuery))) {
+        _clientFiltered = true;
+        final maxPages = latestPagination.totalPages.clamp(1, 10);
+        for (int p = 2; p <= maxPages; p++) {
+          final nextRes = await repository.getGrainSales(
+            accessToken: accessToken,
+            page: p,
+            pageSize: _pagination.pageSize,
+            search: _searchQuery,
+            status: _currentFilter != 'all' ? _currentFilter : null,
+          );
+          if (epoch != _loadEpoch) return;
+          if (nextRes.items.isEmpty) break;
+          allItems.addAll(nextRes.items);
+          latestPagination = nextRes.pagination;
+        }
+      }
+
+      _sales = allItems;
+      _pagination = latestPagination;
       _errorMessage = null;
+
+      if (_clientFiltered) {
+        final matched = sales;
+        _statusCounts[_currentFilter] = matched.length;
+        if (_currentFilter == 'all') {
+          for (final st in const ['pending', 'received', 'approved', 'rejected', 'paid']) {
+            _statusCounts[st] = matched.where((s) => s.status.toLowerCase() == st).length;
+          }
+        }
+      } else {
+        _statusCounts[_currentFilter] = latestPagination.total;
+        unawaited(_refreshStatusCounts(
+          searchSnapshot: _searchQuery,
+          known: {_currentFilter: latestPagination.total},
+        ));
+      }
     } on GrainSaleException catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage = e.message;
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage = ErrorSanitizer.sanitize(e, defaultAction: 'Loading grain sales');
     } finally {
-      _isLoading = false;
-      _isRefreshing = false;
-      notifyListeners();
+      if (epoch == _loadEpoch) {
+        _isLoading = false;
+        _isRefreshing = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -92,6 +208,7 @@ class GrainSaleController extends ChangeNotifier {
     _isLoadingMore = true;
     notifyListeners();
 
+    final epoch = _loadEpoch;
     try {
       final nextPage = _pagination.page + 1;
       final result = await repository.getGrainSales(
@@ -102,20 +219,28 @@ class GrainSaleController extends ChangeNotifier {
         status: _currentFilter != 'all' ? _currentFilter : null,
       );
 
+      if (epoch != _loadEpoch) return;
       _sales.addAll(result.items);
       _pagination = result.pagination;
     } catch (_) {
       // Keep existing list on pagination failure
     } finally {
-      _isLoadingMore = false;
-      notifyListeners();
+      if (epoch == _loadEpoch) {
+        _isLoadingMore = false;
+        notifyListeners();
+      }
     }
   }
 
   /// Sets live search query and reloads dataset
   void setSearchQuery(String query) {
-    if (_searchQuery == query) return;
-    _searchQuery = query;
+    final normalized = query.trim();
+    _liveQuery = normalized;
+    if (_searchQuery == normalized) {
+      notifyListeners();
+      return;
+    }
+    _searchQuery = normalized;
     loadSales();
   }
 
@@ -163,6 +288,10 @@ class GrainSaleController extends ChangeNotifier {
 
       _sales.insert(0, newItem);
       _pagination = _pagination.copyWith(total: _pagination.total + 1);
+      _statusCounts['all'] = (_statusCounts['all'] ?? 0) + 1;
+      final st = newItem.status.toLowerCase();
+      _statusCounts[st] = (_statusCounts[st] ?? 0) + 1;
+      unawaited(_refreshStatusCounts(searchSnapshot: _searchQuery, known: const {}));
       _errorMessage = null;
       notifyListeners();
       return true;
@@ -208,9 +337,20 @@ class GrainSaleController extends ChangeNotifier {
         rejectionReason: rejectionReason,
       );
 
+      final oldStatus = existingItem?.status.toLowerCase();
       if (existingIndex != -1) {
         _sales[existingIndex] = updated;
       }
+      final nextStatus = updated.status.toLowerCase();
+      if (oldStatus != null && oldStatus != nextStatus) {
+        if ((_statusCounts[oldStatus] ?? 0) > 0) {
+          _statusCounts[oldStatus] = _statusCounts[oldStatus]! - 1;
+        }
+        if (_statusCounts.containsKey(nextStatus)) {
+          _statusCounts[nextStatus] = _statusCounts[nextStatus]! + 1;
+        }
+      }
+      unawaited(_refreshStatusCounts(searchSnapshot: _searchQuery, known: const {}));
       _errorMessage = null;
       notifyListeners();
       return true;
@@ -242,9 +382,20 @@ class GrainSaleController extends ChangeNotifier {
       );
 
       final index = _sales.indexWhere((s) => s.id == saleId);
+      final oldStatus = index != -1 ? _sales[index].status.toLowerCase() : null;
       if (index != -1) {
         _sales[index] = updated;
       }
+      final nextStatus = updated.status.toLowerCase();
+      if (oldStatus != null && oldStatus != nextStatus) {
+        if ((_statusCounts[oldStatus] ?? 0) > 0) {
+          _statusCounts[oldStatus] = _statusCounts[oldStatus]! - 1;
+        }
+        if (_statusCounts.containsKey(nextStatus)) {
+          _statusCounts[nextStatus] = _statusCounts[nextStatus]! + 1;
+        }
+      }
+      unawaited(_refreshStatusCounts(searchSnapshot: _searchQuery, known: const {}));
       _errorMessage = null;
       notifyListeners();
       return true;
@@ -281,9 +432,20 @@ class GrainSaleController extends ChangeNotifier {
       );
 
       final index = _sales.indexWhere((s) => s.id == saleId);
+      final oldStatus = index != -1 ? _sales[index].status.toLowerCase() : null;
       if (index != -1) {
         _sales[index] = updated;
       }
+      final nextStatus = updated.status.toLowerCase();
+      if (oldStatus != null && oldStatus != nextStatus) {
+        if ((_statusCounts[oldStatus] ?? 0) > 0) {
+          _statusCounts[oldStatus] = _statusCounts[oldStatus]! - 1;
+        }
+        if (_statusCounts.containsKey(nextStatus)) {
+          _statusCounts[nextStatus] = _statusCounts[nextStatus]! + 1;
+        }
+      }
+      unawaited(_refreshStatusCounts(searchSnapshot: _searchQuery, known: const {}));
       _errorMessage = null;
       notifyListeners();
       return true;

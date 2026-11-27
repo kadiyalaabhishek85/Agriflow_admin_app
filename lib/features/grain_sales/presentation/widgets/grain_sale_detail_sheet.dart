@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -7,13 +8,14 @@ import '../../domain/entities/grain_sale_item.dart';
 import '../../../../core/widgets/sheet_drag_handle.dart';
 
 /// Modal bottom sheet displaying complete grain sale transaction details.
-class GrainSaleDetailSheet extends StatelessWidget {
+class GrainSaleDetailSheet extends StatefulWidget {
   final GrainSaleItem item;
   final bool isSubmitting;
-  final VoidCallback? onPay;
-  final VoidCallback? onReview;
-  final VoidCallback? onReject;
-  final VoidCallback? onUpdateYield;
+  final FutureOr<void> Function()? onPay;
+  final FutureOr<void> Function()? onReview;
+  final FutureOr<void> Function()? onReject;
+  final FutureOr<void> Function()? onUpdateYield;
+  final String? Function()? errorMessage;
 
   const GrainSaleDetailSheet({
     super.key,
@@ -23,16 +25,18 @@ class GrainSaleDetailSheet extends StatelessWidget {
     this.onReview,
     this.onReject,
     this.onUpdateYield,
+    this.errorMessage,
   });
 
   static Future<void> show({
     required BuildContext context,
     required GrainSaleItem item,
     required bool isSubmitting,
-    VoidCallback? onPay,
-    VoidCallback? onReview,
-    VoidCallback? onReject,
-    VoidCallback? onUpdateYield,
+    FutureOr<void> Function()? onPay,
+    FutureOr<void> Function()? onReview,
+    FutureOr<void> Function()? onReject,
+    FutureOr<void> Function()? onUpdateYield,
+    String? Function()? errorMessage,
   }) {
     return showModalBottomSheet(
       context: context,
@@ -45,12 +49,41 @@ class GrainSaleDetailSheet extends StatelessWidget {
         onReview: onReview,
         onReject: onReject,
         onUpdateYield: onUpdateYield,
+        errorMessage: errorMessage,
       ),
     );
   }
 
   @override
+  State<GrainSaleDetailSheet> createState() => _GrainSaleDetailSheetState();
+}
+
+class _GrainSaleDetailSheetState extends State<GrainSaleDetailSheet> {
+  bool _busy = false;
+  String? _actionError;
+
+  Future<void> _runAction(FutureOr<void> Function()? action) async {
+    if (action == null || _busy || widget.isSubmitting) return;
+    setState(() {
+      _busy = true;
+      _actionError = null;
+    });
+    try {
+      await action();
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _actionError = widget.errorMessage?.call();
+        });
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
+    final busy = _busy || widget.isSubmitting;
     final shortId = item.id.length > 8 ? item.id.substring(0, 8) : item.id;
 
     return Container(
@@ -77,22 +110,24 @@ class GrainSaleDetailSheet extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'GRAIN SALE #$shortId',
-                      style: AppTypography.eyebrow(color: AppColors.canopyDeep),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Procurement Details',
-                      style: AppTypography.titleLarge(color: AppColors.text),
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'GRAIN SALE #$shortId',
+                        style: AppTypography.eyebrow(color: AppColors.canopyDeep),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Procurement Details',
+                        style: AppTypography.titleLarge(color: AppColors.text),
+                      ),
+                    ],
+                  ),
                 ),
                 IconButton(
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: busy ? null : () => Navigator.of(context).pop(),
                   icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
                 ),
               ],
@@ -212,6 +247,23 @@ class GrainSaleDetailSheet extends StatelessWidget {
             ),
             const SizedBox(height: 24),
 
+            if (_actionError != null) ...[
+              Container(
+                key: const Key('grain_sale_detail_error'),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.alert.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.alert.withValues(alpha: 0.4)),
+                ),
+                child: Text(
+                  _actionError!,
+                  style: AppTypography.bodySmall(color: AppColors.alert),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
             // Actions Section
             if (item.isPaid) ...[
               Container(
@@ -262,7 +314,7 @@ class GrainSaleDetailSheet extends StatelessWidget {
             ] else if (item.isApproved) ...[
               ElevatedButton(
                 key: const Key('grain_sale_mark_as_paid_btn'),
-                onPressed: isSubmitting ? null : onPay,
+                onPressed: (busy || widget.onPay == null) ? null : () => _runAction(widget.onPay),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.canopyDeep,
                   foregroundColor: Colors.white,
@@ -273,7 +325,7 @@ class GrainSaleDetailSheet extends StatelessWidget {
                   ),
                   elevation: 0,
                 ),
-                child: isSubmitting
+                child: busy
                     ? const SizedBox(
                         height: 20,
                         width: 20,
@@ -297,12 +349,12 @@ class GrainSaleDetailSheet extends StatelessWidget {
             ] else if (item.isReceived || item.status.toLowerCase() == 'pending') ...[
               Row(
                 children: [
-                  if (onReject != null) ...[
+                  if (widget.onReject != null) ...[
                     Expanded(
                       flex: 2,
                       child: OutlinedButton(
                         key: const Key('grain_sale_reject_btn'),
-                        onPressed: isSubmitting ? null : onReject,
+                        onPressed: busy ? null : () => _runAction(widget.onReject),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: AppColors.alert,
                           side: const BorderSide(color: AppColors.alert),
@@ -323,7 +375,9 @@ class GrainSaleDetailSheet extends StatelessWidget {
                     flex: 3,
                     child: ElevatedButton(
                       key: const Key('grain_sale_review_approve_btn'),
-                      onPressed: isSubmitting ? null : onReview,
+                      onPressed: (busy || widget.onReview == null)
+                          ? null
+                          : () => _runAction(widget.onReview),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.canopyDeep,
                         foregroundColor: Colors.white,
@@ -334,7 +388,7 @@ class GrainSaleDetailSheet extends StatelessWidget {
                         ),
                         elevation: 0,
                       ),
-                      child: isSubmitting
+                      child: busy
                           ? const SizedBox(
                               height: 20,
                               width: 20,
@@ -348,9 +402,13 @@ class GrainSaleDetailSheet extends StatelessWidget {
                               children: [
                                 const Icon(Icons.fact_check_outlined, size: 18),
                                 const SizedBox(width: 8),
-                                Text(
-                                  'Review & Approve',
-                                  style: AppTypography.titleSmall(color: Colors.white),
+                                Flexible(
+                                  child: Text(
+                                    'Review & Approve',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: AppTypography.titleSmall(color: Colors.white),
+                                  ),
                                 ),
                               ],
                             ),
@@ -362,11 +420,11 @@ class GrainSaleDetailSheet extends StatelessWidget {
 
             // Yield correction — allowed while the sale is still open
             // (not paid, not rejected); backend enforces final state rules.
-            if (onUpdateYield != null && !item.isPaid && !item.isRejected) ...[
+            if (widget.onUpdateYield != null && !item.isPaid && !item.isRejected) ...[
               const SizedBox(height: 12),
               OutlinedButton(
                 key: const Key('grain_sale_update_yield_btn'),
-                onPressed: isSubmitting ? null : onUpdateYield,
+                onPressed: busy ? null : () => _runAction(widget.onUpdateYield),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.canopyDeep,
                   side: const BorderSide(color: AppColors.canopyDeep),
@@ -375,12 +433,12 @@ class GrainSaleDetailSheet extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: Row(
+                child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.scale_rounded, size: 18),
-                    const SizedBox(width: 8),
-                    const Text(
+                    Icon(Icons.scale_rounded, size: 18),
+                    SizedBox(width: 8),
+                    Text(
                       'Update Yield',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),

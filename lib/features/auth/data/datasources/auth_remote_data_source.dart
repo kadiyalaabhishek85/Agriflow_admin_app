@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 import '../../domain/entities/auth_exception.dart';
 import '../../domain/entities/auth_session.dart';
 import '../../domain/entities/auth_user.dart';
@@ -21,7 +22,7 @@ abstract class AuthRemoteDataSource {
 }
 
 class FastApiAuthRemoteDataSource implements AuthRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

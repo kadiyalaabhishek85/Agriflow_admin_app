@@ -44,35 +44,43 @@ class BillingReceiptSheet extends StatefulWidget {
 
 class _BillingReceiptSheetState extends State<BillingReceiptSheet> {
   bool _isDownloading = false;
+  bool _copied = false;
+  String? _statusMessage;
+  String? _statusLocation;
+  bool _statusIsError = false;
 
   BillingReceiptData get _data => BillingReceiptData.from(widget.item);
 
-  void _copyReceiptToClipboard(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: _data.toCopyText()));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Receipt copied to clipboard',
-              style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-        backgroundColor: AppColors.canopyDeep,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  Future<void> _copyReceiptToClipboard() async {
+    try {
+      await Clipboard.setData(ClipboardData(text: _data.toCopyText()));
+      if (!mounted) return;
+      setState(() {
+        _copied = true;
+        _statusIsError = false;
+        _statusMessage = 'Receipt copied to clipboard';
+        _statusLocation = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _statusIsError = true;
+        _statusMessage = 'Unable to copy receipt to clipboard.';
+        _statusLocation = null;
+      });
+    }
   }
 
   /// Generates the receipt PDF from verified data and saves it through the
-  /// SAF system picker. Duplicate taps are ignored while in flight.
+  /// SAF system picker (Android/iOS) or browser download (Web).
+  /// Duplicate taps are ignored while in flight.
   Future<void> _downloadReceipt() async {
     if (_isDownloading) return;
-    setState(() => _isDownloading = true);
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = null;
+      _statusLocation = null;
+    });
 
     final downloader = widget.downloader ?? AndroidReceiptDownloader();
     ReceiptDownloadResult result;
@@ -86,47 +94,12 @@ class _BillingReceiptSheetState extends State<BillingReceiptSheet> {
     }
 
     if (!mounted) return;
-    setState(() => _isDownloading = false);
-
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  result.success ? Icons.check_circle_rounded : Icons.error_outline_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    result.message,
-                    style: GoogleFonts.manrope(fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            if (result.success && result.location != null) ...[
-              const SizedBox(height: 2),
-              Text(
-                result.location!,
-                style: GoogleFonts.manrope(fontSize: 11, fontWeight: FontWeight.w500),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ],
-        ),
-        backgroundColor: result.success ? AppColors.canopyDeep : AppColors.bad,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    setState(() {
+      _isDownloading = false;
+      _statusIsError = !result.success;
+      _statusMessage = result.message;
+      _statusLocation = result.success ? result.location : null;
+    });
   }
 
   @override
@@ -304,7 +277,7 @@ class _BillingReceiptSheetState extends State<BillingReceiptSheet> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
           // Actions — Copy and Download are both available at all times;
           // Settle appears only for pending transactions.
@@ -312,20 +285,28 @@ class _BillingReceiptSheetState extends State<BillingReceiptSheet> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => _copyReceiptToClipboard(context),
-                  icon: const Icon(Icons.copy_rounded, size: 16),
-                  label: Text(
-                    'Copy Receipt',
-                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                  onPressed: _copyReceiptToClipboard,
+                  icon: Icon(
+                    _copied ? Icons.check_rounded : Icons.copy_rounded,
+                    size: 16,
+                  ),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      'Copy Receipt',
+                      maxLines: 1,
+                      style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                    ),
                   ),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    foregroundColor: AppColors.text,
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                     side: const BorderSide(color: AppColors.line),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton.icon(
                   onPressed: _isDownloading ? null : _downloadReceipt,
@@ -339,15 +320,19 @@ class _BillingReceiptSheetState extends State<BillingReceiptSheet> {
                           ),
                         )
                       : const Icon(Icons.download_rounded, size: 16),
-                  label: Text(
-                    _isDownloading ? 'Saving...' : 'Download Receipt',
-                    style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                  label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      _isDownloading ? 'Saving...' : 'Download Receipt',
+                      maxLines: 1,
+                      style: GoogleFonts.manrope(fontWeight: FontWeight.w700),
+                    ),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.canopy,
                     foregroundColor: Colors.white,
                     disabledBackgroundColor: AppColors.canopy.withValues(alpha: 0.6),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
@@ -374,6 +359,61 @@ class _BillingReceiptSheetState extends State<BillingReceiptSheet> {
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
+              ),
+            ),
+          ],
+          if (_statusMessage != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: _statusIsError ? AppColors.badBg : AppColors.goodBg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: (_statusIsError ? AppColors.bad : AppColors.good)
+                      .withValues(alpha: 0.35),
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    _statusIsError
+                        ? Icons.error_outline_rounded
+                        : Icons.check_circle_rounded,
+                    size: 18,
+                    color: _statusIsError ? AppColors.bad : AppColors.good,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _statusMessage!,
+                          style: GoogleFonts.manrope(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: _statusIsError ? AppColors.bad : AppColors.good,
+                          ),
+                        ),
+                        if (_statusLocation != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            _statusLocation!,
+                            style: GoogleFonts.manrope(
+                              fontSize: 11,
+                              color: AppColors.textMuted,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

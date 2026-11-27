@@ -42,6 +42,7 @@ class _MockBillingRemoteDataSource implements BillingRemoteDataSource {
   Exception? errorToThrow;
 
   int getTransactionsCallCount = 0;
+  int createTransactionCallCount = 0;
   int payTransactionCallCount = 0;
   int getFarmersCallCount = 0;
   String? lastPaidId;
@@ -85,6 +86,33 @@ class _MockBillingRemoteDataSource implements BillingRemoteDataSource {
     }
 
     return (items: filtered, pagination: paginationToReturn.copyWith(total: filtered.length));
+  }
+
+  @override
+  Future<BillingTransactionItem> createTransaction({
+    required String accessToken,
+    required String farmerId,
+    required double amount,
+    required String direction,
+    required String referenceType,
+    String? description,
+  }) async {
+    createTransactionCallCount++;
+    if (errorToThrow != null) throw errorToThrow!;
+
+    final created = BillingTransactionItem(
+      id: 'tx-created-$createTransactionCallCount',
+      referenceType: referenceType,
+      farmerId: farmerId,
+      amount: amount,
+      direction: direction,
+      status: 'pending',
+      description: description,
+      invoiceNumber: 'INV-2026-NEW',
+      createdAt: DateTime.now(),
+    );
+    transactionsToReturn.insert(0, created);
+    return created;
   }
 
   @override
@@ -338,6 +366,53 @@ void main() {
       expect(result.pagination.total, 25);
     });
 
+    test('createTransaction sends POST /transactions with payload and returns item', () async {
+      final mockClient = MockClient((request) async {
+        expect(request.method, 'POST');
+        expect(request.url.path, '/api/v1/transactions');
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        expect(body['farmer_id'], 'farmer-101');
+        expect(body['amount'], '5000.00');
+        expect(body['direction'], 'credit');
+        expect(body['reference_type'], 'seed_purchase');
+        expect(body['description'], 'seed sale for 5000');
+
+        return http.Response(
+          jsonEncode({
+            'success': true,
+            'data': {
+              'id': 'tx-new-1',
+              'reference_type': 'seed_purchase',
+              'farmer_id': 'farmer-101',
+              'amount': '5000.00',
+              'direction': 'credit',
+              'status': 'pending',
+              'description': 'seed sale for 5000',
+              'invoice_number': 'INV-20261127-ABCD1234',
+              'created_at': '2026-11-27T12:00:00Z',
+            },
+          }),
+          201,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+
+      final dataSource = FastApiBillingRemoteDataSource(client: mockClient);
+      final created = await dataSource.createTransaction(
+        accessToken: 'test_token',
+        farmerId: 'farmer-101',
+        amount: 5000,
+        direction: 'credit',
+        referenceType: 'seed_purchase',
+        description: 'seed sale for 5000',
+      );
+
+      expect(created.id, 'tx-new-1');
+      expect(created.amount, 5000.0);
+      expect(created.invoiceNumber, 'INV-20261127-ABCD1234');
+      expect(created.status, 'pending');
+    });
+
     test('payTransaction sends PATCH /transactions/{id}/pay with description', () async {
       final mockClient = MockClient((request) async {
         expect(request.method, 'PATCH');
@@ -561,20 +636,73 @@ void main() {
       expect(find.text('Copy Receipt'), findsOneWidget);
     });
 
-    testWidgets('LogTransactionSheet shows backend notice and disabled submit', (tester) async {
+    testWidgets('LogTransactionSheet validates inputs and submits with inline error support', (tester) async {
+      String? capturedFarmerId;
+      double? capturedAmount;
+      String? capturedDirection;
+      String? capturedType;
+      String? capturedDesc;
+
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
           home: Scaffold(
-            body: LogTransactionSheet(farmers: {}),
+            body: LogTransactionSheet(
+              farmers: const {
+                'farmer-1': (name: 'QA Farmer', phone: '9144795385', village: null),
+              },
+              onSubmit: ({
+                required farmerId,
+                required amount,
+                required direction,
+                required referenceType,
+                description,
+              }) async {
+                capturedFarmerId = farmerId;
+                capturedAmount = amount;
+                capturedDirection = direction;
+                capturedType = referenceType;
+                capturedDesc = description;
+                return 'Server validation error';
+              },
+            ),
           ),
         ),
       );
 
       expect(find.text('Record Transaction'), findsOneWidget);
-      expect(find.text('Backend API required — to be supplied by Syed.'), findsOneWidget);
+      expect(find.text('Backend API required — to be supplied by Syed.'), findsNothing);
 
       final submitBtn = tester.widget<ElevatedButton>(find.byType(ElevatedButton));
-      expect(submitBtn.onPressed, isNull); // Disabled button
+      expect(submitBtn.onPressed, isNotNull);
+
+      // Tapping submit without farmer shows validation error
+      await tester.tap(find.text('Submit Record'));
+      await tester.pump();
+      expect(find.text('Please select a farmer account.'), findsOneWidget);
+
+      // Select farmer, enter invalid amount
+      await tester.ensureVisible(find.text('Choose farmer account...'));
+      await tester.tap(find.text('Choose farmer account...'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('QA Farmer (9144795385)').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Submit Record'));
+      await tester.pump();
+      expect(find.text('Please enter a valid amount greater than ₹0.'), findsOneWidget);
+
+      // Enter valid amount & description -> calls onSubmit and shows returned error inline
+      await tester.enterText(find.byType(TextField).at(0), '5000');
+      await tester.enterText(find.byType(TextField).at(1), 'seed sale for 5000');
+      await tester.tap(find.text('Submit Record'));
+      await tester.pumpAndSettle();
+
+      expect(capturedFarmerId, 'farmer-1');
+      expect(capturedAmount, 5000.0);
+      expect(capturedDirection, 'credit');
+      expect(capturedType, 'billing');
+      expect(capturedDesc, 'seed sale for 5000');
+      expect(find.text('Server validation error'), findsOneWidget);
     });
 
     testWidgets('BillingScreen renders Payments Desk header, search, and list', (tester) async {
@@ -595,7 +723,12 @@ void main() {
       expect(find.byType(BillingCard), findsAtLeastNWidgets(1));
     });
 
-    testWidgets('Tapping Add Bill opens LogTransactionSheet with backend banner', (tester) async {
+    testWidgets('Tapping Add Bill submits new record and shows it in BillingScreen', (tester) async {
+      mockDs.farmersToReturn = {
+        'farmer-101': (name: 'Ramesh Patel', phone: '9876543210', village: 'Nashik'),
+      };
+      controller = BillingController(repository: repository, accessToken: 'test_token');
+
       await tester.pumpWidget(
         MaterialApp(
           home: BillingScreen(
@@ -610,7 +743,25 @@ void main() {
       await tester.tap(find.text('Add Bill'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Backend API required — to be supplied by Syed.'), findsOneWidget);
+      await tester.ensureVisible(find.text('Choose farmer account...'));
+      await tester.tap(find.text('Choose farmer account...'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ramesh Patel (9876543210)').last);
+      await tester.pumpAndSettle();
+
+      final sheetFields = find.descendant(
+        of: find.byType(LogTransactionSheet),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(sheetFields.at(0), '5000');
+      await tester.enterText(sheetFields.at(1), 'seed sale for 5000');
+      await tester.tap(find.text('Submit Record'));
+      await tester.pumpAndSettle();
+
+      expect(mockDs.createTransactionCallCount, 1);
+      expect(find.byType(LogTransactionSheet), findsNothing);
+      expect(find.text('Transaction recorded successfully'), findsOneWidget);
+      expect(find.text('INV-2026-NEW'), findsOneWidget);
     });
 
     testWidgets('Tapping Settle on pending card opens confirmation dialog and marks paid', (tester) async {
@@ -805,6 +956,67 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.byType(BillingScreen), findsOneWidget);
+    });
+
+    testWidgets('BillingReceiptSheet Settle / Pay action settles pending transaction', (tester) async {
+      final mockDs = _MockBillingRemoteDataSource();
+      mockDs.transactionsToReturn = [sampleTransactionDebit];
+      final repo = BillingRepositoryImpl(remoteDataSource: mockDs);
+      final billingCtrl = BillingController(repository: repo, accessToken: 'test_token');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: BillingScreen(
+            controller: billingCtrl,
+            onBack: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(BillingCard).first);
+      await tester.pumpAndSettle();
+      expect(find.byType(BillingReceiptSheet), findsOneWidget);
+
+      await tester.tap(find.text('Settle / Pay'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Settle Payment'), findsOneWidget);
+      await tester.tap(find.text('Confirm Settle'));
+      await tester.pumpAndSettle();
+
+      expect(mockDs.payTransactionCallCount, 1);
+      expect(billingCtrl.transactions.first.status, 'completed');
+    });
+
+    testWidgets('BillingScreen renders all filters and metrics cleanly on narrow viewports', (tester) async {
+      for (final size in const [Size(320, 640), Size(360, 740), Size(412, 860)]) {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.reset);
+
+        final mockDs = _MockBillingRemoteDataSource();
+        mockDs.transactionsToReturn = [sampleTransactionCredit, sampleTransactionDebit];
+        final repo = BillingRepositoryImpl(remoteDataSource: mockDs);
+        final billingCtrl = BillingController(repository: repo, accessToken: 'test_token');
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: BillingScreen(
+              controller: billingCtrl,
+              onBack: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('All'), findsOneWidget);
+        expect(find.text('Completed (Paid)'), findsOneWidget);
+        expect(find.text('Pending'), findsAtLeastNWidgets(1));
+        expect(find.text('Failed'), findsOneWidget);
+        expect(find.text('Dates'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      }
     });
   });
 }

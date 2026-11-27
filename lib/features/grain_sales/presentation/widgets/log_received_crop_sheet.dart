@@ -7,6 +7,7 @@ import '../../../../core/widgets/sheet_drag_handle.dart';
 class LogReceivedCropSheet extends StatefulWidget {
   final Map<String, ({String name, String phone, String? village})> farmers;
   final bool isSubmitting;
+  final String? Function()? errorMessage;
   final Future<bool> Function({
     required String farmerId,
     required String grainType,
@@ -21,12 +22,14 @@ class LogReceivedCropSheet extends StatefulWidget {
     required this.farmers,
     required this.isSubmitting,
     required this.onSubmit,
+    this.errorMessage,
   });
 
   static Future<bool?> show({
     required BuildContext context,
     required Map<String, ({String name, String phone, String? village})> farmers,
     required bool isSubmitting,
+    String? Function()? errorMessage,
     required Future<bool> Function({
       required String farmerId,
       required String grainType,
@@ -43,6 +46,7 @@ class LogReceivedCropSheet extends StatefulWidget {
       builder: (ctx) => LogReceivedCropSheet(
         farmers: farmers,
         isSubmitting: isSubmitting,
+        errorMessage: errorMessage,
         onSubmit: onSubmit,
       ),
     );
@@ -58,6 +62,8 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
   String? _selectedFarmerId;
   String _selectedGrainType = 'Rice';
   String _selectedGrade = 'A';
+  bool _submitting = false;
+  String? _localError;
 
   final _rawController = TextEditingController();
   final _goodController = TextEditingController();
@@ -103,9 +109,7 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
   Future<void> _handleSubmit() async {
     if (!_formKey.currentState!.validate()) return;
     if (_selectedFarmerId == null || _selectedFarmerId!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a farmer.')),
-      );
+      setState(() => _localError = 'Please select a farmer.');
       return;
     }
 
@@ -113,14 +117,18 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
     final goodQtl = double.tryParse(_goodController.text.trim()) ?? 0.0;
     final wastageQtl = double.tryParse(_wastageController.text.trim()) ?? 0.0;
 
-    if (goodQtl + wastageQtl > rawQtl + 0.01) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Good Quantity + Wastage cannot exceed Raw Material.'),
-        ),
-      );
+    if ((goodQtl + wastageQtl - rawQtl).abs() > 0.01) {
+      setState(() {
+        _localError =
+            'Good Quantity (${goodQtl.toStringAsFixed(1)}) + Wastage (${wastageQtl.toStringAsFixed(1)}) must equal Raw Quantity (${rawQtl.toStringAsFixed(1)}).';
+      });
       return;
     }
+
+    setState(() {
+      _submitting = true;
+      _localError = null;
+    });
 
     // Convert Quintals to Kilograms for backend (1 Qtl = 100 Kg)
     final success = await widget.onSubmit(
@@ -132,8 +140,16 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
       wastageKg: wastageQtl * 100.0,
     );
 
-    if (success && mounted) {
+    if (!mounted) return;
+    setState(() => _submitting = false);
+
+    if (success) {
       Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _localError = widget.errorMessage?.call() ??
+            'Failed to save procurement entry. Please try again.';
+      });
     }
   }
 
@@ -163,22 +179,24 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'NEW PROCUREMENT INTAKE',
-                        style: AppTypography.eyebrow(color: AppColors.canopyDeep),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Log Received Crop',
-                        style: AppTypography.titleLarge(color: AppColors.text),
-                      ),
-                    ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'NEW PROCUREMENT INTAKE',
+                          style: AppTypography.eyebrow(color: AppColors.canopyDeep),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Log Received Crop',
+                          style: AppTypography.titleLarge(color: AppColors.text),
+                        ),
+                      ],
+                    ),
                   ),
                   IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
+                    onPressed: _submitting ? null : () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded, color: AppColors.textMuted),
                   ),
                 ],
@@ -427,11 +445,27 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
+              if (_localError != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  key: const Key('log_crop_error_banner'),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.alert.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.alert.withValues(alpha: 0.4)),
+                  ),
+                  child: Text(
+                    _localError!,
+                    style: AppTypography.bodySmall(color: AppColors.alert),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 20),
 
               // Submit Button
               ElevatedButton(
-                onPressed: widget.isSubmitting ? null : _handleSubmit,
+                onPressed: (widget.isSubmitting || _submitting) ? null : _handleSubmit,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.canopyDeep,
                   foregroundColor: Colors.white,
@@ -442,7 +476,7 @@ class _LogReceivedCropSheetState extends State<LogReceivedCropSheet> {
                   ),
                   elevation: 0,
                 ),
-                child: widget.isSubmitting
+                child: (widget.isSubmitting || _submitting)
                     ? const SizedBox(
                         height: 20,
                         width: 20,

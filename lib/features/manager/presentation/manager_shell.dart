@@ -171,7 +171,9 @@ class _ManagerShellState extends State<ManagerShell>
     _bookingController = widget.bookingController ??
         BookingController(
           repository: BookingRepositoryImpl(
-            remoteDataSource: BookingRemoteDataSourceImpl(),
+            remoteDataSource: BookingRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -187,8 +189,12 @@ class _ManagerShellState extends State<ManagerShell>
     _grainSalesController = widget.grainSalesController ??
         GrainSaleController(
           repository: GrainSaleRepositoryImpl(
-            remoteDataSource: GrainSaleRemoteDataSourceImpl(),
-            bookingDataSource: BookingRemoteDataSourceImpl(),
+            remoteDataSource: GrainSaleRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
+            bookingDataSource: BookingRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -204,7 +210,9 @@ class _ManagerShellState extends State<ManagerShell>
     _seedsInventoryController = widget.seedsInventoryController ??
         SeedsInventoryController(
           repository: SeedsInventoryRepositoryImpl(
-            remoteDataSource: FastApiSeedsInventoryRemoteDataSource(),
+            remoteDataSource: FastApiSeedsInventoryRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -212,7 +220,9 @@ class _ManagerShellState extends State<ManagerShell>
     _warehouseController = widget.warehouseController ??
         WarehouseController(
           repository: WarehouseRepositoryImpl(
-            remoteDataSource: FastApiWarehouseRemoteDataSource(),
+            remoteDataSource: FastApiWarehouseRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
           isAdmin: false,
@@ -221,7 +231,9 @@ class _ManagerShellState extends State<ManagerShell>
     _billingController = widget.billingController ??
         BillingController(
           repository: BillingRepositoryImpl(
-            remoteDataSource: FastApiBillingRemoteDataSource(),
+            remoteDataSource: FastApiBillingRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );

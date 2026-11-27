@@ -646,5 +646,48 @@ void main() {
 
       expect(logoutTriggered, isTrue);
     });
+
+    testWidgets('AdminShell back navigation returns to previously opened screen before Home', (tester) async {
+      tester.view.physicalSize = const Size(412, 860);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() => tester.view.resetPhysicalSize());
+
+      final session = _createSession(UserRole.superAdmin);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AdminShell(session: session, onLogout: () {}),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Open Reports & Analytics via drawer
+      final scaffoldState = tester.state<ScaffoldState>(find.byType(Scaffold));
+      scaffoldState.openDrawer();
+      await tester.pumpAndSettle();
+      final reportsItem = find.descendant(
+        of: find.byType(CustomDrawer),
+        matching: find.text('Reports & Analytics'),
+      );
+      await tester.ensureVisible(reportsItem);
+      await tester.pumpAndSettle();
+      await tester.tap(reportsItem);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportScreen), findsOneWidget);
+
+      // Navigate from Reports to Grain Sales bottom tab
+      await tester.tap(find.text('Grain Sales').last);
+      await tester.pumpAndSettle();
+      expect(find.byType(GrainSaleScreen), findsOneWidget);
+
+      // Back from Grain Sales returns to Reports & Analytics (not Home!)
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded).first);
+      await tester.pumpAndSettle();
+      expect(find.byType(ReportScreen), findsOneWidget);
+
+      // Back from Reports & Analytics returns to Home Dashboard
+      await tester.tap(find.byKey(const Key('report_back_btn')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AdminDashboardView), findsOneWidget);
+    });
   });
 }

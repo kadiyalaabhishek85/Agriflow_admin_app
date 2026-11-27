@@ -181,4 +181,20 @@ class WarehouseRepositoryImpl implements WarehouseRepository {
       slotId: slotId,
     );
   }
+
+  /// Aggregates active (non-cancelled) booking grain quantities for a warehouse
+  /// when capacity is occupied by farmer bookings not yet logged in manual inventory.
+  Future<List<WarehouseInventoryItem>> getBookedStockForWarehouse({
+    required String accessToken,
+    required String warehouseId,
+  }) async {
+    final ds = remoteDataSource;
+    if (ds is FastApiWarehouseRemoteDataSource) {
+      return ds.getBookedStockForWarehouse(
+        accessToken: accessToken,
+        warehouseId: warehouseId,
+      );
+    }
+    return const [];
+  }
 }

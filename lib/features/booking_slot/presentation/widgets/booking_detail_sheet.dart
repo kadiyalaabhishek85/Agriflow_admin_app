@@ -131,6 +131,8 @@ class BookingDetailSheet extends StatelessWidget {
             'Booking Date',
             AppDates.dayMonthYear(item.bookingDate, fallback: 'Date TBD'),
           ),
+          if (item.enrichedSlotTime != null && item.enrichedSlotTime!.isNotEmpty)
+            DetailRow('Slot Time', item.enrichedSlotTime!),
           DetailRow('Warehouse Hub', item.displayWarehouse),
           if (item.displayAddress.isNotEmpty)
             DetailRow('Location', item.displayAddress),

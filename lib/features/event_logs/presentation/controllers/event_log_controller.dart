@@ -22,8 +22,37 @@ class EventLogController extends ChangeNotifier {
   bool _isLoadingMore = false;
   String? _errorMessage;
   String _searchQuery = '';
+  String _liveQuery = '';
+  int _loadEpoch = 0;
 
-  List<AuditLogItem> get logs => List.unmodifiable(_logs);
+  bool _matchesQuery(AuditLogItem item, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.action.toLowerCase().contains(q) ||
+        (item.entityType ?? '').toLowerCase().contains(q) ||
+        (item.entityId ?? '').toLowerCase().contains(q) ||
+        (item.details ?? '').toLowerCase().contains(q) ||
+        (item.userId ?? '').toLowerCase().contains(q) ||
+        item.id.toLowerCase().contains(q);
+  }
+
+  /// Filters already-loaded audit logs immediately while typing.
+  void previewSearch(String query) {
+    final normalized = query.trim();
+    if (_liveQuery == normalized) return;
+    _liveQuery = normalized;
+    notifyListeners();
+  }
+
+  List<AuditLogItem> get logs {
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isEmpty) {
+      return List.unmodifiable(_logs);
+    }
+    return List.unmodifiable(
+      _logs.where((item) => _matchesQuery(item, activeQuery)),
+    );
+  }
   AuditLogPagination get pagination => _pagination;
   bool get isLoading => _isLoading;
   bool get isLoadingMore => _isLoadingMore;
@@ -34,6 +63,7 @@ class EventLogController extends ChangeNotifier {
 
   /// Loads page 1 with the current search query.
   Future<void> loadLogs({bool refresh = false}) async {
+    final epoch = ++_loadEpoch;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -44,24 +74,50 @@ class EventLogController extends ChangeNotifier {
         page: 1,
         search: _searchQuery.isEmpty ? null : _searchQuery,
       );
+      if (epoch != _loadEpoch) return;
+
+      final allItems = List<AuditLogItem>.from(result.items);
+      var latestPagination = result.pagination;
+
+      if (_searchQuery.isNotEmpty &&
+          allItems.any((item) => !_matchesQuery(item, _searchQuery))) {
+        final maxPages = latestPagination.totalPages.clamp(1, 10);
+        for (int p = 2; p <= maxPages; p++) {
+          final nextRes = await repository.getAuditLogs(
+            accessToken: accessToken,
+            page: p,
+            search: _searchQuery,
+          );
+          if (epoch != _loadEpoch) return;
+          if (nextRes.items.isEmpty) break;
+          allItems.addAll(nextRes.items);
+          latestPagination = nextRes.pagination;
+        }
+      }
+
+      if (epoch != _loadEpoch) return;
       _logs
         ..clear()
-        ..addAll(result.items);
-      _pagination = result.pagination;
+        ..addAll(allItems);
+      _pagination = latestPagination;
     } on EventLogsException catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage = e.message;
       if (refresh) {
         _logs.clear();
       }
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage =
           ErrorSanitizer.sanitize(e, defaultAction: 'Loading event logs');
       if (refresh) {
         _logs.clear();
       }
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (epoch == _loadEpoch) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -93,8 +149,13 @@ class EventLogController extends ChangeNotifier {
 
   /// Server-side search (the contract exposes a `search` query param).
   Future<void> setSearchQuery(String query) async {
-    if (_searchQuery == query) return;
-    _searchQuery = query;
+    final normalized = query.trim();
+    _liveQuery = normalized;
+    if (_searchQuery == normalized) {
+      notifyListeners();
+      return;
+    }
+    _searchQuery = normalized;
     await loadLogs();
   }
 

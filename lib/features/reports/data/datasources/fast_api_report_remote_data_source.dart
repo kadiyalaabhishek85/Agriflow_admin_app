@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 
 import '../../domain/entities/monthly_report.dart';
 import '../../domain/entities/reports_exception.dart';
@@ -13,8 +14,7 @@ import 'report_remote_data_source.dart';
 /// Verified endpoint (live OpenAPI, re-verified 2026-09-28):
 /// - `GET /api/v1/admin/reports/monthly?month=YYYY-MM` → MonthlyReportResponse
 class FastApiReportRemoteDataSource implements ReportRemoteDataSource {
-  static const String defaultBaseUrl =
-      'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

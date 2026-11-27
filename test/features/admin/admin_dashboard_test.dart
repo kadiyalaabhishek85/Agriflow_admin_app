@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agriflow_admin/core/constants/app_colors.dart';
 import 'package:agriflow_admin/core/models/user_role.dart';
+import 'package:agriflow_admin/core/navigation/nav_destination.dart';
+import 'package:agriflow_admin/features/booking_slot/domain/entities/booking_item.dart';
 import 'package:agriflow_admin/features/admin/dashboard/domain/entities/admin_dashboard_data.dart';
 import 'package:agriflow_admin/features/admin/dashboard/domain/repositories/admin_dashboard_repository.dart';
 import 'package:agriflow_admin/features/admin/dashboard/presentation/controllers/admin_dashboard_controller.dart';
@@ -296,7 +298,7 @@ void main() {
 
       // 2. Summary strip
       expect(find.byType(DashboardSummaryStrip), findsOneWidget);
-      expect(find.text('MTD Procurement'), findsOneWidget);
+      expect(find.text('MTD Seed Revenue'), findsOneWidget);
 
       // 3. KPI Stat Cards
       expect(find.byType(DashboardMetricCard), findsWidgets);
@@ -310,12 +312,19 @@ void main() {
       // 4. Mandi Rates Strip
       expect(find.byType(DashboardMandiStrip), findsOneWidget);
       expect(find.text('Live Mandi Rates'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(DashboardMandiStrip),
+          matching: find.text('View all'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('Cotton'), findsOneWidget);
       expect(find.text('Paddy'), findsOneWidget);
 
       // 5. Monthly Trend Chart
       expect(find.byType(DashboardChartCard), findsOneWidget);
-      expect(find.text('Procurement Trend'), findsOneWidget);
+      expect(find.text('Monthly Revenue Trend'), findsOneWidget);
 
       // 6. Quick Action Cards
       expect(find.text('Quick Actions'), findsOneWidget);
@@ -353,6 +362,108 @@ void main() {
         expect(tester.takeException(), isNull, reason: 'Overflow occurred on size $size');
         expect(find.byType(AdminDashboardView), findsOneWidget);
       }
+    });
+
+    testWidgets('Surfaces section warnings and triggers View all navigation', (tester) async {
+      mockRepo.dataToReturn = AdminDashboardData(
+        totalFarmers: 10,
+        activeFarmers: 8,
+        pendingFarmerApprovals: 2,
+        totalManagers: 3,
+        activeBookings: 4,
+        pendingGrainSales: 1,
+        totalSeedStockKg: 500,
+        warehouseInventoryKg: 200,
+        procurementMtdKg: 150,
+        revenueMtd: 88,
+        procurementCostMtd: 0,
+        profitMtd: 88,
+        pendingPayments: 2,
+        activeCrops: 5,
+        visitsToday: 0,
+        visitsFetchFailed: true,
+        warehousesFetchFailed: true,
+        sectionWarnings: const ['Mandi rates unavailable', 'Farm visits count unavailable'],
+        mandiRates: const [
+          MandiRateItem(cropType: 'Wheat', grade: 'A', pricePerKg: 25, effectiveDate: '2026-11-26'),
+        ],
+      );
+      await controller.loadDashboard();
+
+      String? navigatedRoute;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AdminDashboardView(
+              session: testSession,
+              controller: controller,
+              onTabSelected: (_) {},
+              onNavigate: (r) => navigatedRoute = r,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Some dashboard sections failed to load'), findsOneWidget);
+      expect(find.text('—'), findsOneWidget);
+      expect(find.text('Hub count unavailable'), findsOneWidget);
+      expect(find.text('150 kg procured · 4 active bookings · 1 pending sales'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('View all'));
+      await tester.tap(find.text('View all'));
+      expect(navigatedRoute, NavDestination.marketRates.id);
+    });
+  });
+
+  group('Audit model parsing fixes', () {
+    test('AdminAuditItem falls back to entity_type and new_value when details is null', () {
+      final item = AdminAuditItem.fromJson({
+        'id': '1',
+        'action': 'farmer.create',
+        'entity_type': 'user',
+        'details': null,
+        'new_value': {'status': 'active'},
+      });
+      expect(item.details, 'user · status: active');
+    });
+
+    test('BookingItem parses optional slot_time from backend JSON', () {
+      final booking = BookingItem.fromJson({
+        'id': 'b1',
+        'farmer_id': 'f1',
+        'warehouse_id': 'w1',
+        'booking_date': '2026-11-28',
+        'slot_time': '09:00 AM - 12:00 PM',
+        'grain_type': 'Paddy',
+        'quantity_kg': 250,
+        'status': 'confirmed',
+      });
+      expect(booking.enrichedSlotTime, '09:00 AM - 12:00 PM');
+    });
+
+    testWidgets('DashboardEmptyView renders without RenderFlex overflow in tight 170px constraints', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 322,
+                height: 170,
+                child: DashboardEmptyView(
+                  title: 'No matching grain sales',
+                  message: 'Clear filters or search text to see all records.',
+                  onRefresh: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('No matching grain sales'), findsOneWidget);
     });
   });
 }

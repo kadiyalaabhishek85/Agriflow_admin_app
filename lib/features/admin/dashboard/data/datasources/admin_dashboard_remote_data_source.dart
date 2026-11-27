@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import 'package:agriflow_admin/features/dashboard/shared/presentation/widgets/dashboard_chart_card.dart';
 import 'package:agriflow_admin/features/dashboard/shared/presentation/widgets/dashboard_mandi_strip.dart';
@@ -12,7 +13,7 @@ abstract class AdminDashboardRemoteDataSource {
 }
 
 class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;
@@ -52,7 +53,9 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
       final dashboardJson = _parseResponse(dashboardResponse);
       final summaryData = (dashboardJson['data'] as Map<String, dynamic>?) ?? dashboardJson;
 
-      // 2. Fetch Mandi Rates (Public, non-blocking)
+      final sectionWarnings = <String>[];
+
+      // 2. Fetch Mandi Rates
       List<MandiRateItem> mandiRates = [];
       try {
         final ratesResponse = await client
@@ -66,13 +69,16 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
           mandiRates = list
               .map((item) => MandiRateItem.fromJson(item as Map<String, dynamic>))
               .toList();
+        } else {
+          sectionWarnings.add('Mandi rates unavailable (HTTP ${ratesResponse.statusCode})');
         }
       } catch (_) {
-        // Fallback gracefully without breaking entire dashboard
+        sectionWarnings.add('Mandi rates unavailable');
       }
 
-      // 3. Fetch Monthly Reports for Trend Chart (Safely querying current & past 3 months)
+      // 3. Fetch Monthly Reports for Trend Chart (current & past 5 months)
       List<MonthlyChartPoint> monthlyPoints = [];
+      bool sawUnauthorized = false;
       try {
         final now = DateTime.now();
         final List<String> months = [];
@@ -90,6 +96,10 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
                   headers: _headers(token: accessToken),
                 )
                 .timeout(const Duration(seconds: 5));
+            if (repRes.statusCode == 401) {
+              sawUnauthorized = true;
+              return null;
+            }
             if (repRes.statusCode == 200) {
               final repJson = jsonDecode(repRes.body);
               final rData = repJson['data'] as Map<String, dynamic>? ?? {};
@@ -106,29 +116,40 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
         });
 
         final results = await Future.wait(reportFutures);
+        if (sawUnauthorized) {
+          throw const AuthException(
+            message: 'Session expired. Please log in again.',
+            statusCode: 401,
+          );
+        }
         for (final pt in results) {
           if (pt != null) {
             monthlyPoints.add(pt);
           }
         }
+      } on AuthException {
+        rethrow;
       } catch (_) {
-        // Non-blocking for chart
+        // Recorded below if no points returned
       }
 
-      // If no points fetched or all empty, provide current MTD revenue point if available
       if (monthlyPoints.isEmpty) {
-        final rev = double.tryParse((summaryData['revenue_mtd'] ?? '0').toString()) ?? 0.0;
-        monthlyPoints = [
-          MonthlyChartPoint(label: 'MTD', value: rev),
-        ];
+        sectionWarnings.add('Monthly trend chart unavailable');
       }
 
       // 4. Fetch Total Visits count from /farm-visits
       int totalVisitsCount = 0;
+      bool visitsFetchFailed = false;
       try {
         final visitsRes = await client
             .get(_uri('/farm-visits'), headers: _headers(token: accessToken))
             .timeout(const Duration(seconds: 8));
+        if (visitsRes.statusCode == 401) {
+          throw const AuthException(
+            message: 'Session expired. Please log in again.',
+            statusCode: 401,
+          );
+        }
         if (visitsRes.statusCode == 200) {
           final vJson = jsonDecode(visitsRes.body);
           if (vJson['pagination'] != null && vJson['pagination']['total'] != null) {
@@ -136,22 +157,45 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
           } else if (vJson['data'] is List) {
             totalVisitsCount = (vJson['data'] as List).length;
           }
+        } else {
+          visitsFetchFailed = true;
+          sectionWarnings.add('Farm visits count unavailable (HTTP ${visitsRes.statusCode})');
         }
-      } catch (_) {}
+      } on AuthException {
+        rethrow;
+      } catch (_) {
+        visitsFetchFailed = true;
+        sectionWarnings.add('Farm visits count unavailable');
+      }
 
       // 5. Fetch Active Warehouses count
       int warehousesCount = 0;
+      bool warehousesFetchFailed = false;
       try {
         final whRes = await client
             .get(_uri('/warehouses'), headers: _headers(token: accessToken))
             .timeout(const Duration(seconds: 8));
+        if (whRes.statusCode == 401) {
+          throw const AuthException(
+            message: 'Session expired. Please log in again.',
+            statusCode: 401,
+          );
+        }
         if (whRes.statusCode == 200) {
           final whJson = jsonDecode(whRes.body);
           if (whJson['data'] is List) {
             warehousesCount = (whJson['data'] as List).length;
           }
+        } else {
+          warehousesFetchFailed = true;
+          sectionWarnings.add('Warehouse count unavailable (HTTP ${whRes.statusCode})');
         }
-      } catch (_) {}
+      } on AuthException {
+        rethrow;
+      } catch (_) {
+        warehousesFetchFailed = true;
+        sectionWarnings.add('Warehouse count unavailable');
+      }
 
       // 6. Fetch Recent Audit Logs
       List<AdminAuditItem> auditLogs = [];
@@ -162,14 +206,26 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
               headers: _headers(token: accessToken),
             )
             .timeout(const Duration(seconds: 8));
+        if (auditRes.statusCode == 401) {
+          throw const AuthException(
+            message: 'Session expired. Please log in again.',
+            statusCode: 401,
+          );
+        }
         if (auditRes.statusCode == 200) {
           final aJson = jsonDecode(auditRes.body);
           final items = (aJson['data'] is List) ? aJson['data'] as List : [];
           auditLogs = items
               .map((item) => AdminAuditItem.fromJson(item as Map<String, dynamic>))
               .toList();
+        } else {
+          sectionWarnings.add('Recent activity unavailable (HTTP ${auditRes.statusCode})');
         }
-      } catch (_) {}
+      } on AuthException {
+        rethrow;
+      } catch (_) {
+        sectionWarnings.add('Recent activity unavailable');
+      }
 
       return AdminDashboardData.fromJson(
         summaryJson: summaryData,
@@ -178,6 +234,9 @@ class FastApiAdminDashboardRemoteDataSource implements AdminDashboardRemoteDataS
         recentAuditLogs: auditLogs,
         totalVisits: totalVisitsCount,
         activeWarehouses: warehousesCount,
+        sectionWarnings: sectionWarnings,
+        visitsFetchFailed: visitsFetchFailed,
+        warehousesFetchFailed: warehousesFetchFailed,
       );
     } on SocketException catch (_) {
       throw const AuthException(

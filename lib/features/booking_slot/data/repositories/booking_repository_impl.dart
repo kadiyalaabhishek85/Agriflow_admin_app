@@ -46,6 +46,34 @@ class BookingRepositoryImpl implements BookingRepository {
     );
   }
 
+  Future<({List<BookingItem> items, BookingPagination pagination})> _fetchRawBookings({
+    required String accessToken,
+    required int page,
+    required int pageSize,
+    String? search,
+    String? status,
+    String? bookingDate,
+  }) {
+    final ds = remoteDataSource;
+    if (ds is BookingRemoteDataSourceImpl) {
+      return ds.getBookings(
+        accessToken: accessToken,
+        page: page,
+        pageSize: pageSize,
+        search: search,
+        status: status,
+        bookingDate: bookingDate,
+      );
+    }
+    return ds.getBookings(
+      accessToken: accessToken,
+      page: page,
+      pageSize: pageSize,
+      search: search,
+      status: status,
+    );
+  }
+
   @override
   Future<({List<BookingItem> items, BookingPagination pagination})> getBookings({
     required String accessToken,
@@ -53,14 +81,16 @@ class BookingRepositoryImpl implements BookingRepository {
     int pageSize = 20,
     String? search,
     String? status,
+    String? bookingDate,
   }) async {
     // 1. Fetch raw bookings from backend
-    final result = await remoteDataSource.getBookings(
+    final result = await _fetchRawBookings(
       accessToken: accessToken,
       page: page,
       pageSize: pageSize,
       search: search,
       status: status,
+      bookingDate: bookingDate,
     );
 
     // 2. Ensure relationship lookup catalogs are warm
@@ -119,5 +149,56 @@ class BookingRepositoryImpl implements BookingRepository {
   }) async {
     await _ensureCatalogsLoaded(accessToken);
     return _farmersCache;
+  }
+
+  /// Fetches lightweight (`pageSize: 1`) total counts for each booking status chip.
+  Future<Map<String, int>> getStatusCounts({
+    required String accessToken,
+    String? search,
+    String? bookingDate,
+    Map<String, int> seedKnown = const {},
+  }) async {
+    const statuses = [
+      'all',
+      'pending',
+      'confirmed',
+      'delivered',
+      'inspected',
+      'completed',
+      'cancelled',
+    ];
+    final result = Map<String, int>.from(seedKnown);
+    final pendingStatuses = statuses.where((s) => !result.containsKey(s)).toList();
+    if (pendingStatuses.isEmpty) return result;
+
+    final normalizedSearch =
+        (search == null || search.trim().isEmpty) ? null : search.trim();
+    final normalizedDate =
+        (bookingDate == null || bookingDate.trim().isEmpty) ? null : bookingDate.trim();
+
+    final entries = await Future.wait(
+      pendingStatuses.map((status) async {
+        try {
+          final res = await _fetchRawBookings(
+            accessToken: accessToken,
+            page: 1,
+            pageSize: 1,
+            search: normalizedSearch,
+            status: status == 'all' ? null : status,
+            bookingDate: normalizedDate,
+          );
+          return MapEntry<String, int?>(status, res.pagination.total);
+        } catch (_) {
+          return MapEntry<String, int?>(status, null);
+        }
+      }),
+    );
+
+    for (final entry in entries) {
+      if (entry.value != null) {
+        result[entry.key] = entry.value!;
+      }
+    }
+    return result;
   }
 }

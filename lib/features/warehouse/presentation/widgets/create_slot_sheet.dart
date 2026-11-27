@@ -8,6 +8,7 @@ import '../../../../core/widgets/sheet_drag_handle.dart';
 class CreateSlotSheet extends StatefulWidget {
   final String warehouseId;
   final String warehouseName;
+  final String? Function()? errorMessage;
   final Future<bool> Function({
     required String warehouseId,
     required String slotDate,
@@ -20,6 +21,7 @@ class CreateSlotSheet extends StatefulWidget {
     super.key,
     required this.warehouseId,
     required this.warehouseName,
+    this.errorMessage,
     required this.onCreate,
   });
 
@@ -127,16 +129,23 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
   }
 
   String? _capacityError;
+  String? _serverError;
 
   bool _validate() {
     setState(() {
       _capacityError = null;
+      _serverError = null;
       final qtl = double.tryParse(_capacityQtlController.text.trim());
       if (qtl == null || qtl <= 0) {
         _capacityError = 'Enter a valid positive capacity in Quintals.';
       }
+      final startMins = _startTime.hour * 60 + _startTime.minute;
+      final endMins = _endTime.hour * 60 + _endTime.minute;
+      if (endMins <= startMins) {
+        _serverError = 'End time must be after start time.';
+      }
     });
-    return _capacityError == null;
+    return _capacityError == null && _serverError == null;
   }
 
   Future<void> _handleSubmit() async {
@@ -145,7 +154,10 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
     final qtl = double.parse(_capacityQtlController.text.trim());
     final capacityKg = qtl * 100.0; // 1 Qtl = 100 Kg
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _serverError = null;
+    });
 
     final success = await widget.onCreate(
       warehouseId: widget.warehouseId,
@@ -156,7 +168,13 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
     );
 
     if (mounted) {
-      setState(() => _isSubmitting = false);
+      setState(() {
+        _isSubmitting = false;
+        if (!success) {
+          _serverError = widget.errorMessage?.call() ??
+              'Failed to create booking slot. Please try again.';
+        }
+      });
       if (success) {
         Navigator.of(context).pop();
       }
@@ -165,18 +183,21 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: SingleChildScrollView(
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.9;
+    return Material(
+      color: AppColors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 16,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+          ),
+          child: SingleChildScrollView(
         child: Form(
           key: _formKey,
           child: Column(
@@ -279,10 +300,15 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  _startTime.format(context),
-                                  style: AppTypography.bodySmall(color: AppColors.text),
+                                Expanded(
+                                  child: Text(
+                                    _startTime.format(context),
+                                    style: AppTypography.bodySmall(color: AppColors.text),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
+                                const SizedBox(width: 4),
                                 const Icon(Icons.access_time, size: 16, color: AppColors.textMuted),
                               ],
                             ),
@@ -316,10 +342,15 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  _endTime.format(context),
-                                  style: AppTypography.bodySmall(color: AppColors.text),
+                                Expanded(
+                                  child: Text(
+                                    _endTime.format(context),
+                                    style: AppTypography.bodySmall(color: AppColors.text),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
+                                const SizedBox(width: 4),
                                 const Icon(Icons.access_time, size: 16, color: AppColors.textMuted),
                               ],
                             ),
@@ -341,6 +372,31 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
                 enabled: !_isSubmitting,
               ),
+
+              if (_serverError != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.badBg,
+                    borderRadius: BorderRadius.circular(AppColors.radiusSm),
+                    border: Border.all(color: AppColors.bad.withValues(alpha: 0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.error_outline, size: 16, color: AppColors.bad),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _serverError!,
+                          style: AppTypography.caption(color: AppColors.bad),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 24),
 
@@ -398,6 +454,8 @@ class _CreateSlotSheetState extends State<CreateSlotSheet> {
             ],
           ),
         ),
+      ),
+      ),
       ),
     );
   }

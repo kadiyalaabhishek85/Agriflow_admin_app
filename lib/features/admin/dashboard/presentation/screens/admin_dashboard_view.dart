@@ -77,12 +77,17 @@ class AdminDashboardView extends StatelessWidget {
                 _buildHeader(),
                 const SizedBox(height: 18),
 
+                if (data.sectionWarnings.isNotEmpty) ...[
+                  _buildPartialWarningBanner(data.sectionWarnings),
+                  const SizedBox(height: 14),
+                ],
+
                 // Summary Strip matching HTML
                 DashboardSummaryStrip(
                   primaryAmount: '₹${data.revenueMtd.toStringAsFixed(0)}',
-                  primaryLabel: "MTD Procurement",
+                  primaryLabel: "MTD Seed Revenue",
                   secondarySubtitle:
-                      '${data.activeBookings} active bookings · ${data.pendingGrainSales} pending sales · ${data.activeCrops} crops',
+                      '${data.procurementMtdKg.toStringAsFixed(0)} kg procured · ${data.activeBookings} active bookings · ${data.pendingGrainSales} pending sales',
                   onTap: () => onTabSelected(1),
                 ),
                 const SizedBox(height: 20),
@@ -97,7 +102,7 @@ class AdminDashboardView extends StatelessWidget {
 
                 // Monthly Financial Trend Chart
                 DashboardChartCard(
-                  title: 'Procurement Trend',
+                  title: 'Monthly Revenue Trend',
                   subtitle: '6-Month Trend',
                   points: data.monthlyPoints,
                 ),
@@ -132,6 +137,12 @@ class AdminDashboardView extends StatelessWidget {
 
   Widget _buildHeader() {
     final name = session.user.name.isNotEmpty ? session.user.name : 'Super Admin';
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good Morning'
+        : hour < 17
+            ? 'Good Afternoon'
+            : 'Good Evening';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -166,7 +177,7 @@ class AdminDashboardView extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Good Morning, $name 👋',
+          '$greeting, $name 👋',
           style: AppTypography.displayMedium(color: AppColors.text).copyWith(
             fontSize: 22,
             fontWeight: FontWeight.w700,
@@ -186,9 +197,9 @@ class AdminDashboardView extends StatelessWidget {
       crossAxisCount: 2,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      childAspectRatio: 1.05,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 0.96,
       children: [
         DashboardMetricCard(
           label: 'Total Seed Stock',
@@ -216,8 +227,10 @@ class AdminDashboardView extends StatelessWidget {
           icon: Icons.warehouse_outlined,
           iconColor: const Color(0xFF6B4C9A),
           iconBgColor: const Color(0xFFF4F2F7),
-          deltaText: '${data.activeWarehouses} warehouses',
-          deltaColor: AppColors.textMuted,
+          deltaText: data.warehousesFetchFailed
+              ? 'Hub count unavailable'
+              : '${data.activeWarehouses} warehouses',
+          deltaColor: data.warehousesFetchFailed ? AppColors.bad : AppColors.textMuted,
           onTap: () => onNavigate(NavDestination.warehouse.id),
         ),
         DashboardMetricCard(
@@ -251,7 +264,7 @@ class AdminDashboardView extends StatelessWidget {
               ),
             ),
             const StatusPill(
-              label: '● Operational',
+              label: '● All Systems Operational',
               type: PillType.good,
             ),
           ],
@@ -261,9 +274,9 @@ class AdminDashboardView extends StatelessWidget {
           crossAxisCount: 2,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
-          childAspectRatio: 1.05,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 1.02,
           children: [
             DashboardMetricCard(
               label: 'Total Farmers',
@@ -291,7 +304,7 @@ class AdminDashboardView extends StatelessWidget {
             ),
             DashboardMetricCard(
               label: 'Farm Visits Recorded',
-              value: '${data.totalVisits}',
+              value: data.visitsFetchFailed ? '—' : '${data.totalVisits}',
               icon: Icons.pin_drop_outlined,
               iconColor: AppColors.canopy,
               iconBgColor: const Color(0xFFF0F8EC),
@@ -368,46 +381,36 @@ class AdminDashboardView extends StatelessWidget {
     required Color bgColor,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppColors.radiusMd),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(AppColors.radiusMd),
-            border: Border.all(color: AppColors.line),
-            boxShadow: AppColors.shadowSm,
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: AppColors.shadowSm,
+            ),
+            child: Icon(icon, size: 22, color: iconColor),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, size: 17, color: iconColor),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                title,
-                style: AppTypography.caption(color: AppColors.text).copyWith(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 10,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-            ],
+          const SizedBox(height: 7),
+          Text(
+            title,
+            style: AppTypography.caption(color: AppColors.textMuted).copyWith(
+              fontWeight: FontWeight.w700,
+              fontSize: 10,
+              height: 1.2,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
-        ),
+        ],
       ),
     );
   }
@@ -416,12 +419,12 @@ class AdminDashboardView extends StatelessWidget {
     final tools = [
       ('Inventory', Icons.inventory_2_outlined, const Color(0xFF0369A1), const Color(0xFFECF5FD), NavDestination.seedsInventory.id),
       ('Warehouse', Icons.warehouse_outlined, const Color(0xFF6B4C9A), const Color(0xFFF4F2F7), NavDestination.warehouse.id),
-      ('Billing', Icons.receipt_long_outlined, AppColors.canopy, const Color(0xFFF0F8EC), NavDestination.billing.id),
+      ('Billing', Icons.receipt_long_outlined, AppColors.canopyDeep, const Color(0xFFF0F8EC), NavDestination.billing.id),
       ('Market Rates', Icons.trending_up_rounded, AppColors.amber, const Color(0xFFFDF5EC), NavDestination.marketRates.id),
       ('Reports', Icons.bar_chart_rounded, const Color(0xFF0369A1), const Color(0xFFECF5FD), NavDestination.reports.id),
       ('Event Logs', Icons.fact_check_outlined, const Color(0xFF6B4C9A), const Color(0xFFF4F2F7), NavDestination.eventLogs.id),
       ('Managers', Icons.badge_outlined, AppColors.amber, const Color(0xFFFDF3E5), NavDestination.managers.id),
-      ('All Farmers', Icons.people_outline_rounded, AppColors.canopy, const Color(0xFFF0F8EC), NavDestination.allFarmers.id),
+      ('All Farmers', Icons.people_outline_rounded, AppColors.canopyDeep, const Color(0xFFF0F8EC), NavDestination.allFarmers.id),
       ('Credits', Icons.credit_card_outlined, const Color(0xFF0369A1), const Color(0xFFECF5FD), NavDestination.credits.id),
       ('Cache', Icons.storage_rounded, const Color(0xFF6B4C9A), const Color(0xFFF4F2F7), NavDestination.cacheManagement.id),
     ];
@@ -443,8 +446,8 @@ class AdminDashboardView extends StatelessWidget {
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 4,
             crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            childAspectRatio: 0.85,
+            mainAxisSpacing: 14,
+            childAspectRatio: 0.72,
           ),
           itemBuilder: (context, index) {
             final tool = tools[index];
@@ -522,11 +525,11 @@ class AdminDashboardView extends StatelessWidget {
                     height: 34,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF4F2F7),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(11),
                     ),
                     child: const Icon(
                       Icons.history_rounded,
-                      size: 18,
+                      size: 16,
                       color: Color(0xFF6B4C9A),
                     ),
                   ),
@@ -565,6 +568,46 @@ class AdminDashboardView extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+
+  Widget _buildPartialWarningBanner(List<String> warnings) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8EC),
+        borderRadius: BorderRadius.circular(AppColors.radiusMd),
+        border: Border.all(color: AppColors.amber.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.amber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Some dashboard sections failed to load: ${warnings.join(' · ')}',
+              style: AppTypography.caption(color: AppColors.text),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: controller.retry,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Text(
+              'Retry',
+              style: AppTypography.caption(color: AppColors.adminNavy).copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

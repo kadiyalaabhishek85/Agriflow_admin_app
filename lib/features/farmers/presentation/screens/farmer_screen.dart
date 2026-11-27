@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/widgets/squircle_icon_button.dart';
@@ -32,6 +33,7 @@ class FarmerScreen extends StatefulWidget {
 class _FarmerScreenState extends State<FarmerScreen> {
   final _searchController = TextEditingController();
   final _scrollController = ScrollController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -49,9 +51,21 @@ class _FarmerScreenState extends State<FarmerScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() {});
+    widget.controller.previewSearch(val);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.controller.setSearchQuery(val);
+      }
+    });
   }
 
   void _onScroll() {
@@ -507,7 +521,12 @@ class _FarmerScreenState extends State<FarmerScreen> {
         ),
         child: TextField(
           controller: _searchController,
-          onChanged: (val) => ctrl.setSearchQuery(val),
+          textInputAction: TextInputAction.search,
+          onChanged: _onSearchChanged,
+          onSubmitted: (val) {
+            _searchDebounce?.cancel();
+            ctrl.setSearchQuery(val);
+          },
           decoration: InputDecoration(
             hintText: 'Search by name or phone...',
             hintStyle: const TextStyle(
@@ -519,7 +538,9 @@ class _FarmerScreenState extends State<FarmerScreen> {
                 ? IconButton(
                     icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textFaint),
                     onPressed: () {
+                      _searchDebounce?.cancel();
                       _searchController.clear();
+                      setState(() {});
                       ctrl.setSearchQuery('');
                     },
                   )

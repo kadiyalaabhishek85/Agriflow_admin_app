@@ -36,8 +36,7 @@ abstract class NotificationRemoteDataSource {
 
 class FastApiNotificationRemoteDataSource
     implements NotificationRemoteDataSource {
-  static const String defaultBaseUrl =
-      'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

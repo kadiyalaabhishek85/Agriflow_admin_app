@@ -1328,6 +1328,250 @@ void main() {
       expect(find.text('Grain Stock'), findsOneWidget);
       expect(find.text('Booking Slots'), findsOneWidget);
     });
+
+    testWidgets('WarehouseDetailSheet displays booked grain stock when stored inventory is empty', (tester) async {
+      final mockClient = MockClient((request) async {
+        if (request.url.path == '/api/v1/warehouses') {
+          return http.Response(
+            jsonEncode([
+              {
+                'id': 'wh-booked',
+                'name': '134e5267890-',
+                'address': 'bfehjebfdhjkn',
+                'total_capacity_kg': 300.0,
+                'current_load_kg': 300.0,
+                'is_active': true,
+              },
+            ]),
+            200,
+          );
+        }
+        if (request.url.path == '/api/v1/warehouses/wh-booked/inventory') {
+          return http.Response(jsonEncode([]), 200);
+        }
+        if (request.url.path == '/api/v1/warehouses/wh-booked/slots') {
+          return http.Response(jsonEncode([]), 200);
+        }
+        if (request.url.path == '/api/v1/bookings') {
+          return http.Response(
+            jsonEncode({
+              'data': [
+                {
+                  'id': 'bk-1',
+                  'warehouse_id': 'wh-booked',
+                  'grain_type': 'Groundnut (Pods)',
+                  'quantity_kg': 300.0,
+                  'status': 'confirmed',
+                },
+                {
+                  'id': 'bk-2',
+                  'warehouse_id': 'wh-booked',
+                  'grain_type': 'Paddy',
+                  'quantity_kg': 50.0,
+                  'status': 'cancelled',
+                },
+              ],
+              'pagination': {'page': 1, 'page_size': 100, 'total': 2, 'total_pages': 1},
+            }),
+            200,
+          );
+        }
+        return http.Response('Not found', 404);
+      });
+
+      final repo = WarehouseRepositoryImpl(
+        remoteDataSource: FastApiWarehouseRemoteDataSource(
+          baseUrl: 'https://test.api.com',
+          client: mockClient,
+        ),
+      );
+      final bookedController = WarehouseController(
+        repository: repo,
+        accessToken: 'token',
+      );
+      await bookedController.loadWarehouses();
+      await bookedController.selectWarehouse(bookedController.warehouses.first);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: WarehouseDetailSheet(
+              controller: bookedController,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Stored Commodities (1)'), findsOneWidget);
+      expect(find.text('Groundnut (Pods)'), findsOneWidget);
+      expect(find.textContaining('Booked Intake'), findsOneWidget);
+      expect(find.text('3.0 Qtl'), findsWidgets);
+      expect(find.text('Paddy'), findsNothing);
+      bookedController.dispose();
+    });
+
+    testWidgets('AddInventorySheet shows inline capacity error and backend errorMessage without closing', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AddInventorySheet(
+              warehouseId: 'wh-1',
+              warehouseName: 'john',
+              availableCapacityKg: 334.0,
+              errorMessage: () => 'Warehouse quota exceeded',
+              onAdd: ({
+                required warehouseId,
+                required grainType,
+                required quantityKg,
+              }) async => false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.enterText(find.byType(TextField).last, '50');
+      await tester.tap(find.text('Add Inventory'));
+      await tester.pump();
+      expect(
+        find.text('Exceeds available warehouse space (3.3 Qtl available).'),
+        findsOneWidget,
+      );
+
+      await tester.enterText(find.byType(TextField).last, '2');
+      await tester.tap(find.text('Add Inventory'));
+      await tester.pumpAndSettle();
+      expect(find.text('Warehouse quota exceeded'), findsOneWidget);
+    });
+
+    testWidgets('CreateSlotSheet validates time window and surfaces backend errorMessage', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CreateSlotSheet(
+              warehouseId: 'wh-1',
+              warehouseName: 'john',
+              errorMessage: () => 'Token expired on server',
+              onCreate: ({
+                required warehouseId,
+                required slotDate,
+                required startTime,
+                required endTime,
+                required capacityKg,
+              }) async => false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Create Slot'));
+      await tester.pumpAndSettle();
+      expect(find.text('Token expired on server'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('AddEditWarehouseSheet editing mode has Material ancestor and renders server error inline', (tester) async {
+      const existing = WarehouseItem(
+        id: 'wh-1',
+        name: 'QA Warehouses 2026-09-29',
+        address: 'QA Automation Address',
+        totalCapacityKg: 2000.0,
+        currentLoadKg: 500.0,
+        location: 'QA Test Lab',
+        contactNumber: '+91 9000000001',
+        isActive: true,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AddEditWarehouseSheet(
+              warehouse: existing,
+              errorMessage: () => 'Cannot update facility capacity',
+              onSave: ({
+                required name,
+                required address,
+                required totalCapacityKg,
+                location,
+                contactNumber,
+                managerId,
+                isActive,
+              }) async => false,
+            ),
+          ),
+        ),
+      );
+
+      await tester.ensureVisible(find.text('Save Changes'));
+      await tester.tap(find.text('Save Changes'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Cannot update facility capacity'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('WarehouseScreen renders single-line fitted filter chips without clipping', (tester) async {
+      tester.view.physicalSize = const Size(360, 740);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      await controller.loadWarehouses();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WarehouseScreen(
+            controller: controller,
+            isAdmin: true,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('All Locations (4)'), findsOneWidget);
+      expect(find.text('Active (4)'), findsOneWidget);
+      expect(find.text('Inactive (0)'), findsOneWidget);
+      expect(find.text('Near/Over Full (2)'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('WarehouseScreen Inactive filter chip filters inactive warehouses and supports reactivation', (tester) async {
+      mockRepo.warehouses = [
+        ...mockRepo.warehouses,
+        const WarehouseItem(
+          id: 'wh-inactive-1',
+          name: 'abhi testings',
+          address: 'kurnool main road',
+          totalCapacityKg: 300.0,
+          currentLoadKg: 0.0,
+          location: 'kurnool',
+          isActive: false,
+        ),
+      ];
+      await controller.loadWarehouses();
+      expect(controller.inactiveWarehousesCount, 1);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: WarehouseScreen(
+            controller: controller,
+            isAdmin: true,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(find.text('Inactive (1)'), findsOneWidget);
+      await tester.tap(find.text('Inactive (1)'));
+      await tester.pump();
+
+      expect(find.text('abhi testings'), findsOneWidget);
+      expect(find.text('Kurnool Storage Hub'), findsNothing);
+
+      final reactivated = await controller.updateWarehouse(
+        warehouseId: 'wh-inactive-1',
+        isActive: true,
+      );
+      expect(reactivated, isTrue);
+      expect(controller.inactiveWarehousesCount, 0);
+    });
   });
 
   // =========================================================================

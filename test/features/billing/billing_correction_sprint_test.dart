@@ -83,6 +83,18 @@ class _TestBillingDataSource implements BillingRemoteDataSource {
   }
 
   @override
+  Future<BillingTransactionItem> createTransaction({
+    required String accessToken,
+    required String farmerId,
+    required double amount,
+    required String direction,
+    required String referenceType,
+    String? description,
+  }) async {
+    throw UnimplementedError('not used in filter sprint tests');
+  }
+
+  @override
   Future<BillingTransactionItem> payTransaction({
     required String accessToken,
     required String transactionId,

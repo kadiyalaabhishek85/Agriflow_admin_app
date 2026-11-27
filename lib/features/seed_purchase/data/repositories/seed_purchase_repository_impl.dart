@@ -99,4 +99,40 @@ class SeedPurchaseRepositoryImpl implements SeedPurchaseRepository {
     await _ensureCatalogsLoaded(accessToken);
     return _farmersCache;
   }
+
+  /// Fetches lightweight (`pageSize: 1`) total counts for each purchase status chip.
+  Future<Map<String, int>> getStatusCounts({
+    required String accessToken,
+    String? search,
+    Map<String, int> seedKnown = const {},
+  }) async {
+    const statuses = ['all', 'pending', 'paid', 'failed'];
+    final result = Map<String, int>.from(seedKnown);
+    final pendingStatuses = statuses.where((s) => !result.containsKey(s)).toList();
+    if (pendingStatuses.isEmpty) return result;
+
+    final entries = await Future.wait(
+      pendingStatuses.map((status) async {
+        try {
+          final res = await remoteDataSource.getPurchases(
+            accessToken: accessToken,
+            page: 1,
+            pageSize: 1,
+            search: (search == null || search.trim().isEmpty) ? null : search.trim(),
+            status: status == 'all' ? null : status,
+          );
+          return MapEntry<String, int?>(status, res.pagination.total);
+        } catch (_) {
+          return MapEntry<String, int?>(status, null);
+        }
+      }),
+    );
+
+    for (final entry in entries) {
+      if (entry.value != null) {
+        result[entry.key] = entry.value!;
+      }
+    }
+    return result;
+  }
 }

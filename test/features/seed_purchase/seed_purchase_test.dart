@@ -713,5 +713,102 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize);
       }
     });
+
+    testWidgets('Typing in search bar filters live via debounced onChanged and clears cleanly', (tester) async {
+      final mockRepo = _MockSeedPurchaseRepository();
+      mockRepo.itemsToReturn = [
+        _createSampleItem(id: 'sp-1', farmerName: 'Asha Devi', paymentStatus: 'paid'),
+        _createSampleItem(id: 'sp-2', farmerName: 'Developer', paymentStatus: 'paid'),
+      ];
+      mockRepo.paginationToReturn = SeedPurchasePagination(page: 1, pageSize: 20, total: 2, totalPages: 1);
+
+      final controller = SeedPurchaseController(repository: mockRepo, accessToken: 'token');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SeedPurchaseScreen(
+              controller: controller,
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(mockRepo.getPurchasesCallCount, 1);
+      expect(find.text('Developer'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'asha');
+      await tester.pump();
+      // Immediately filters loaded list while typing before debounce completes
+      expect(find.text('Asha Devi'), findsOneWidget);
+      expect(find.text('Developer'), findsNothing);
+      expect(find.text('All (1)'), findsOneWidget);
+
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+
+      expect(mockRepo.getPurchasesCallCount, 2);
+      expect(mockRepo.lastSearch, 'asha');
+      expect(find.text('Asha Devi'), findsOneWidget);
+      expect(find.text('Developer'), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.clear_rounded));
+      await tester.pumpAndSettle();
+
+      expect(mockRepo.getPurchasesCallCount, 3);
+      expect(mockRepo.lastSearch, isNull);
+      expect(find.text('Developer'), findsOneWidget);
+    });
+
+    testWidgets('Filter chips show counts for all statuses without clicking each chip', (tester) async {
+      final statusDs = _PerStatusMockSeedPurchaseRemoteDataSource();
+      final repo = SeedPurchaseRepositoryImpl(remoteDataSource: statusDs);
+      final controller = SeedPurchaseController(repository: repo, accessToken: 'token');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SeedPurchaseScreen(
+              controller: controller,
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.widgetWithText(FilterChip, 'All (102)'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Pending (12)'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Paid (85)'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Failed (5)'), findsOneWidget);
+    });
   });
+}
+
+class _PerStatusMockSeedPurchaseRemoteDataSource extends _MockSeedPurchaseRemoteDataSource {
+  @override
+  Future<({List<SeedPurchaseItem> items, SeedPurchasePagination pagination})> getPurchases({
+    required String accessToken,
+    int page = 1,
+    int pageSize = 20,
+    String? search,
+    String? status,
+  }) async {
+    final totalByStatus = <String?, int>{
+      null: 102,
+      'pending': 12,
+      'paid': 85,
+      'failed': 5,
+    };
+    return (
+      items: [_createSampleItem(id: 'sp-1', farmerName: 'Asha', paymentStatus: status ?? 'pending')],
+      pagination: SeedPurchasePagination(
+        page: page,
+        pageSize: pageSize,
+        total: totalByStatus[status] ?? 0,
+        totalPages: 1,
+      ),
+    );
+  }
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -30,6 +31,7 @@ class BillingScreen extends StatefulWidget {
 class _BillingScreenState extends State<BillingScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -46,11 +48,23 @@ class _BillingScreenState extends State<BillingScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     widget.controller.removeListener(_onControllerUpdate);
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() {});
+    widget.controller.previewSearch(val);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.controller.setSearchQuery(val);
+      }
+    });
   }
 
   void _onControllerUpdate() {
@@ -186,11 +200,54 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
-  void _showAddBillSheet() {
-    LogTransactionSheet.show(
+  Future<void> _showAddBillSheet() async {
+    if (widget.controller.farmers.isEmpty) {
+      await widget.controller.loadFarmers();
+      if (!mounted) return;
+    }
+
+    final created = await LogTransactionSheet.show(
       context,
       farmers: widget.controller.farmers,
+      onSubmit: ({
+        required farmerId,
+        required amount,
+        required direction,
+        required referenceType,
+        description,
+      }) async {
+        final success = await widget.controller.createTransaction(
+          farmerId: farmerId,
+          amount: amount,
+          direction: direction,
+          referenceType: referenceType,
+          description: description,
+        );
+        if (success) return null;
+        return widget.controller.errorMessage ?? 'Failed to record transaction';
+      },
     );
+
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Transaction recorded successfully',
+                  style: GoogleFonts.manrope(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppColors.good,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   Future<void> _pickDateRange() async {
@@ -312,7 +369,12 @@ class _BillingScreenState extends State<BillingScreen> {
                         ),
                         child: TextField(
                           controller: _searchController,
-                          onChanged: (val) => controller.setSearchQuery(val),
+                          textInputAction: TextInputAction.search,
+                          onChanged: _onSearchChanged,
+                          onSubmitted: (val) {
+                            _searchDebounce?.cancel();
+                            controller.setSearchQuery(val);
+                          },
                           decoration: InputDecoration(
                             hintText: 'Search by invoice #, memo, farmer ID...',
                             hintStyle: GoogleFonts.manrope(fontSize: 13, color: AppColors.textFaint),
@@ -321,7 +383,9 @@ class _BillingScreenState extends State<BillingScreen> {
                                 ? IconButton(
                                     icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textMuted),
                                     onPressed: () {
+                                      _searchDebounce?.cancel();
                                       _searchController.clear();
+                                      setState(() {});
                                       controller.setSearchQuery('');
                                     },
                                   )
@@ -333,51 +397,55 @@ class _BillingScreenState extends State<BillingScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Status Tabs / Chips
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _FilterChip(
-                              key: const ValueKey('billing-filter-all'),
-                              label: 'All',
-                              isSelected: controller.statusFilter == 'all',
-                              onTap: () => controller.setStatusFilter('all'),
-                            ),
-                            const SizedBox(width: 8),
-                            _FilterChip(
-                              key: const ValueKey('billing-filter-completed'),
-                              label: 'Completed (Paid)',
-                              isSelected: controller.statusFilter == 'completed',
-                              onTap: () => controller.setStatusFilter('completed'),
-                            ),
-                            const SizedBox(width: 8),
-                            _FilterChip(
-                              key: const ValueKey('billing-filter-pending'),
-                              label: 'Pending',
-                              isSelected: controller.statusFilter == 'pending',
-                              onTap: () => controller.setStatusFilter('pending'),
-                            ),
-                            const SizedBox(width: 8),
-                            _FilterChip(
-                              key: const ValueKey('billing-filter-failed'),
-                              label: 'Failed',
-                              isSelected: controller.statusFilter == 'failed',
-                              onTap: () => controller.setStatusFilter('failed'),
-                            ),
-                          ],
+                      // Status Tabs / Chips — single fitted line so all statuses stay visible
+                      SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _FilterChip(
+                                key: const ValueKey('billing-filter-all'),
+                                label: 'All',
+                                isSelected: controller.statusFilter == 'all',
+                                onTap: () => controller.setStatusFilter('all'),
+                              ),
+                              const SizedBox(width: 6),
+                              _FilterChip(
+                                key: const ValueKey('billing-filter-completed'),
+                                label: 'Completed (Paid)',
+                                isSelected: controller.statusFilter == 'completed',
+                                onTap: () => controller.setStatusFilter('completed'),
+                              ),
+                              const SizedBox(width: 6),
+                              _FilterChip(
+                                key: const ValueKey('billing-filter-pending'),
+                                label: 'Pending',
+                                isSelected: controller.statusFilter == 'pending',
+                                onTap: () => controller.setStatusFilter('pending'),
+                              ),
+                              const SizedBox(width: 6),
+                              _FilterChip(
+                                key: const ValueKey('billing-filter-failed'),
+                                label: 'Failed',
+                                isSelected: controller.statusFilter == 'failed',
+                                onTap: () => controller.setStatusFilter('failed'),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                       const SizedBox(height: 10),
 
                       // Secondary Filter Row (Category Dropdown, Direction Dropdown, Date Picker)
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            // Type filter
-                            Container(
-                              width: 120,
+                      Row(
+                        children: [
+                          // Type filter
+                          Expanded(
+                            flex: 3,
+                            child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               decoration: BoxDecoration(
                                 color: AppColors.surface,
@@ -388,27 +456,30 @@ class _BillingScreenState extends State<BillingScreen> {
                                 child: DropdownButton<String?>(
                                   isExpanded: true,
                                   value: controller.referenceTypeFilter,
+                                  style: GoogleFonts.manrope(fontSize: 11.5, color: AppColors.text),
                                   hint: Text(
                                     'Type: All',
                                     style: GoogleFonts.manrope(fontSize: 11.5, color: AppColors.textMuted),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   items: const [
-                                    DropdownMenuItem(value: null, child: Text('Type: All')),
-                                    DropdownMenuItem(value: 'seed_purchase', child: Text('Seed Sale')),
-                                    DropdownMenuItem(value: 'grain_sale', child: Text('Grain Payout')),
-                                    DropdownMenuItem(value: 'billing', child: Text('Service Bill')),
-                                    DropdownMenuItem(value: 'other', child: Text('Other')),
+                                    DropdownMenuItem(value: null, child: Text('Type: All', overflow: TextOverflow.ellipsis)),
+                                    DropdownMenuItem(value: 'seed_purchase', child: Text('Seed Sale', overflow: TextOverflow.ellipsis)),
+                                    DropdownMenuItem(value: 'grain_sale', child: Text('Grain Payout', overflow: TextOverflow.ellipsis)),
+                                    DropdownMenuItem(value: 'billing', child: Text('Service Bill', overflow: TextOverflow.ellipsis)),
+                                    DropdownMenuItem(value: 'other', child: Text('Other', overflow: TextOverflow.ellipsis)),
                                   ],
                                   onChanged: (val) => controller.setReferenceTypeFilter(val),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                          ),
+                          const SizedBox(width: 8),
 
-                            // Direction filter
-                            Container(
-                              width: 120,
+                          // Direction filter
+                          Expanded(
+                            flex: 3,
+                            child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8),
                               decoration: BoxDecoration(
                                 color: AppColors.surface,
@@ -419,28 +490,34 @@ class _BillingScreenState extends State<BillingScreen> {
                                 child: DropdownButton<String?>(
                                   isExpanded: true,
                                   value: controller.directionFilter,
+                                  style: GoogleFonts.manrope(fontSize: 11.5, color: AppColors.text),
                                   hint: Text(
                                     'Flow: All',
                                     style: GoogleFonts.manrope(fontSize: 11.5, color: AppColors.textMuted),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                   items: const [
-                                    DropdownMenuItem(value: null, child: Text('Flow: All')),
-                                    DropdownMenuItem(value: 'credit', child: Text('Credits (In)')),
-                                    DropdownMenuItem(value: 'debit', child: Text('Debits (Out)')),
+                                    DropdownMenuItem(value: null, child: Text('Flow: All', overflow: TextOverflow.ellipsis)),
+                                    DropdownMenuItem(value: 'credit', child: Text('Credits (In)', overflow: TextOverflow.ellipsis)),
+                                    DropdownMenuItem(value: 'debit', child: Text('Debits (Out)', overflow: TextOverflow.ellipsis)),
                                   ],
                                   onChanged: (val) => controller.setDirectionFilter(val),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 8),
+                          ),
+                          const SizedBox(width: 8),
 
-                            // Date Range Filter Button
-                            InkWell(
+                          // Date Range Filter Button
+                          Flexible(
+                            flex: 2,
+                            fit: FlexFit.loose,
+                            child: InkWell(
                               onTap: _pickDateRange,
                               borderRadius: BorderRadius.circular(10),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                height: 48,
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
                                 decoration: BoxDecoration(
                                   color: controller.fromDate != null
                                       ? AppColors.canopyLight
@@ -452,58 +529,59 @@ class _BillingScreenState extends State<BillingScreen> {
                                         : AppColors.line,
                                   ),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.calendar_today_rounded,
-                                      size: 14,
-                                      color: controller.fromDate != null
-                                        ? AppColors.canopyDeep
-                                        : AppColors.textMuted,
-                                    ),
-                                    if (controller.fromDate != null && controller.toDate != null) ...[
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${DateFormat('dd/MM').format(controller.fromDate!)}-${DateFormat('dd/MM').format(controller.toDate!)}',
-                                        style: GoogleFonts.manrope(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.canopyDeep,
-                                        ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today_rounded,
+                                        size: 14,
+                                        color: controller.fromDate != null
+                                            ? AppColors.canopyDeep
+                                            : AppColors.textMuted,
                                       ),
-                                    ] else ...[
                                       const SizedBox(width: 4),
                                       Text(
-                                        'Dates',
+                                        (controller.fromDate != null && controller.toDate != null)
+                                            ? '${DateFormat('dd/MM').format(controller.fromDate!)}-${DateFormat('dd/MM').format(controller.toDate!)}'
+                                            : 'Dates',
+                                        maxLines: 1,
                                         style: GoogleFonts.manrope(
                                           fontSize: 11.5,
-                                          color: AppColors.textMuted,
+                                          fontWeight: controller.fromDate != null
+                                              ? FontWeight.w700
+                                              : FontWeight.w500,
+                                          color: controller.fromDate != null
+                                              ? AppColors.canopyDeep
+                                              : AppColors.textMuted,
                                         ),
                                       ),
                                     ],
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
+                          ),
 
-                            if (controller.fromDate != null ||
-                                controller.referenceTypeFilter != null ||
-                                controller.directionFilter != null ||
-                                controller.statusFilter != 'all') ...[
-                              const SizedBox(width: 6),
-                              IconButton(
-                                icon: const Icon(Icons.refresh_rounded, size: 18, color: AppColors.textMuted),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  controller.clearFilters();
-                                },
-                                tooltip: 'Reset Filters',
-                                splashRadius: 18,
-                              ),
-                            ],
+                          if (controller.fromDate != null ||
+                              controller.referenceTypeFilter != null ||
+                              controller.directionFilter != null ||
+                              controller.statusFilter != 'all') ...[
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: const Icon(Icons.refresh_rounded, size: 18, color: AppColors.textMuted),
+                              onPressed: () {
+                                _searchController.clear();
+                                controller.clearFilters();
+                              },
+                              tooltip: 'Reset Filters',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                              splashRadius: 18,
+                            ),
                           ],
-                        ),
+                        ],
                       ),
                     ],
                   ),

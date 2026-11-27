@@ -71,11 +71,34 @@ class DashboardMandiStrip extends StatelessWidget {
                 ).copyWith(fontWeight: FontWeight.w600),
               ),
             ],
+            if (onViewAll != null) ...[
+              const SizedBox(width: 10),
+              InkWell(
+                onTap: onViewAll,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'View all',
+                        style: AppTypography.caption(color: AppColors.adminNavy).copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      const Icon(Icons.chevron_right_rounded, size: 14, color: AppColors.adminNavy),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         const SizedBox(height: 10),
         SizedBox(
-          height: 92,
+          height: 108,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -84,57 +107,85 @@ class DashboardMandiStrip extends StatelessWidget {
             itemBuilder: (context, index) {
               final rate = rates[index];
               return Container(
-                width: 140,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                width: 172,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(AppColors.radiusMd),
                   border: Border.all(color: AppColors.line),
                   boxShadow: AppColors.shadowSm,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            rate.cropType,
-                            style: AppTypography.bodySmall().copyWith(
-                              fontWeight: FontWeight.w700,
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(
+                        color: AppColors.surfaceAlt,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.eco_rounded,
+                          size: 18,
+                          color: AppColors.canopyDeep,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  rate.cropType,
+                                  style: AppTypography.bodySmall().copyWith(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.textFaint,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primaryLight,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  rate.grade,
+                                  style: AppTypography.caption(
+                                    color: AppColors.canopyDeep,
+                                  ).copyWith(fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '₹${(rate.pricePerKg * 100).toStringAsFixed(0)}/Qtl',
+                            style: AppTypography.titleSmall(
                               color: AppColors.text,
-                            ),
+                            ).copyWith(fontSize: 14.5, fontWeight: FontWeight.w800),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppColors.primaryLight,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            rate.grade,
+                          Text(
+                            '₹${rate.pricePerKg.toStringAsFixed(1)}/kg',
                             style: AppTypography.caption(
                               color: AppColors.canopyDeep,
-                            ).copyWith(fontSize: 9, fontWeight: FontWeight.bold),
+                            ).copyWith(fontSize: 10.5, fontWeight: FontWeight.w700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '₹${(rate.pricePerKg * 100).toStringAsFixed(0)} / Qtl',
-                      style: AppTypography.titleSmall(
-                        color: AppColors.canopyDeep,
-                      ).copyWith(fontWeight: FontWeight.w800),
-                    ),
-                    Text(
-                      '₹${rate.pricePerKg.toStringAsFixed(1)} / kg',
-                      style: AppTypography.caption(
-                        color: AppColors.textMuted,
+                        ],
                       ),
                     ),
                   ],

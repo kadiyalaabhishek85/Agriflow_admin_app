@@ -17,6 +17,15 @@ abstract class BillingRemoteDataSource {
     String? order,
   });
 
+  Future<BillingTransactionItem> createTransaction({
+    required String accessToken,
+    required String farmerId,
+    required double amount,
+    required String direction,
+    required String referenceType,
+    String? description,
+  });
+
   Future<BillingTransactionItem> payTransaction({
     required String accessToken,
     required String transactionId,

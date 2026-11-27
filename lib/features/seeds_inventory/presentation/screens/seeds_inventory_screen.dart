@@ -55,6 +55,7 @@ class _SeedsInventoryScreenState extends State<SeedsInventoryScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => AddEditSeedSheet(
         availableWarehouses: widget.controller.warehouses,
+        errorProvider: () => widget.controller.errorMessage,
         onAdd: ({
           required name,
           required pricePerKg,
@@ -132,6 +133,7 @@ class _SeedsInventoryScreenState extends State<SeedsInventoryScreen> {
       builder: (ctx) => AddEditSeedSheet(
         seed: seed,
         availableWarehouses: widget.controller.warehouses,
+        errorProvider: () => widget.controller.errorMessage,
         onAdd: ({
           required name,
           required pricePerKg,
@@ -362,44 +364,49 @@ class _SeedsInventoryScreenState extends State<SeedsInventoryScreen> {
                   ),
                 ),
 
-                // Filter Chips
+                // Filter Chips (single line, scales cleanly without wrapping or clipping)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        _buildFilterChip(
-                          label: 'All (${ctrl.totalSeedsCount})',
-                          filterKey: 'all',
-                          currentFilter: ctrl.currentFilter,
-                          onSelected: () => ctrl.setFilter('all'),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildFilterChip(
-                          label: 'Active (${ctrl.activeSeedsCount})',
-                          filterKey: 'active',
-                          currentFilter: ctrl.currentFilter,
-                          onSelected: () => ctrl.setFilter('active'),
-                        ),
-                        const SizedBox(width: 8),
-                        _buildFilterChip(
-                          label: 'Low Stock (${ctrl.lowStockCount})',
-                          filterKey: 'low_stock',
-                          currentFilter: ctrl.currentFilter,
-                          onSelected: () => ctrl.setFilter('low_stock'),
-                          isWarning: ctrl.lowStockCount > 0,
-                        ),
-                        if (ctrl.inactiveSeedsCount > 0) ...[
-                          const SizedBox(width: 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                           _buildFilterChip(
-                            label: 'Inactive (${ctrl.inactiveSeedsCount})',
-                            filterKey: 'inactive',
+                            label: 'All (${ctrl.totalSeedsCount})',
+                            filterKey: 'all',
                             currentFilter: ctrl.currentFilter,
-                            onSelected: () => ctrl.setFilter('inactive'),
+                            onSelected: () => ctrl.setFilter('all'),
                           ),
+                          const SizedBox(width: 6),
+                          _buildFilterChip(
+                            label: 'Active (${ctrl.activeSeedsCount})',
+                            filterKey: 'active',
+                            currentFilter: ctrl.currentFilter,
+                            onSelected: () => ctrl.setFilter('active'),
+                          ),
+                          const SizedBox(width: 6),
+                          _buildFilterChip(
+                            label: 'Low Stock (${ctrl.lowStockCount})',
+                            filterKey: 'low_stock',
+                            currentFilter: ctrl.currentFilter,
+                            onSelected: () => ctrl.setFilter('low_stock'),
+                            isWarning: ctrl.lowStockCount > 0,
+                          ),
+                          if (ctrl.inactiveSeedsCount > 0) ...[
+                            const SizedBox(width: 6),
+                            _buildFilterChip(
+                              label: 'Inactive (${ctrl.inactiveSeedsCount})',
+                              filterKey: 'inactive',
+                              currentFilter: ctrl.currentFilter,
+                              onSelected: () => ctrl.setFilter('inactive'),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -430,7 +437,7 @@ class _SeedsInventoryScreenState extends State<SeedsInventoryScreen> {
       onTap: onSelected,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isSelected
               ? (isWarning ? AppColors.bad : AppColors.adminNavy)
@@ -449,7 +456,7 @@ class _SeedsInventoryScreenState extends State<SeedsInventoryScreen> {
                 ? Colors.white
                 : (isWarning ? AppColors.bad : AppColors.textMuted),
             fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-          ),
+          ).copyWith(fontSize: 12),
         ),
       ),
     );

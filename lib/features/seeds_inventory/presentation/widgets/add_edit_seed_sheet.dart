@@ -57,6 +57,9 @@ class AddEditSeedSheet extends StatefulWidget {
   /// Injectable image picker; defaults to the device gallery picker.
   final SeedImagePicker? imagePicker;
 
+  /// Optional provider returning the latest controller error when [onAdd] / [onEdit] returns false.
+  final String? Function()? errorProvider;
+
   const AddEditSeedSheet({
     super.key,
     this.seed,
@@ -65,6 +68,7 @@ class AddEditSeedSheet extends StatefulWidget {
     required this.onEdit,
     this.onUploadImage,
     this.imagePicker,
+    this.errorProvider,
   });
 
   @override
@@ -306,7 +310,13 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
     }
 
     if (mounted) {
-      setState(() => _isSubmitting = false);
+      setState(() {
+        _isSubmitting = false;
+        if (!success) {
+          _submitError = widget.errorProvider?.call() ??
+              'Unable to save seed changes. Please try again.';
+        }
+      });
       if (success) {
         Navigator.of(context).pop(true);
       }
@@ -355,49 +365,55 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.9;
 
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag handle
-            SheetDragHandle(),
-            const SizedBox(height: 14),
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.fromLTRB(20, 16, 20, 20 + bottomInset),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Drag handle
+              SheetDragHandle(),
+              const SizedBox(height: 14),
 
-            // Title and Close Button
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Seed catalogue',
-                      style: AppTypography.eyebrow(color: AppColors.textMuted),
+              // Title and Close Button
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Seed catalogue',
+                          style: AppTypography.eyebrow(color: AppColors.textMuted),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isEditing ? 'Edit Seed Product' : 'Add New Seed Variety',
+                          style: AppTypography.titleLarge(
+                            color: AppColors.text,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      isEditing ? 'Edit Seed Product' : 'Add New Seed Variety',
-                      style: AppTypography.titleLarge(
-                        color: AppColors.text,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-                SquircleIconButton(
-                  icon: const Icon(Icons.close, size: 20),
-                  onTap: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
+                  ),
+                  const SizedBox(width: 8),
+                  SquircleIconButton(
+                    icon: const Icon(Icons.close, size: 20),
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
 
             const SizedBox(height: 16),
 
@@ -530,22 +546,25 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Catalog Availability',
-                      style: AppTypography.bodyMedium(
-                        color: AppColors.text,
-                        fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Catalog Availability',
+                        style: AppTypography.bodyMedium(
+                          color: AppColors.text,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                    Text(
-                      _isActive ? 'Visible to farmers for purchase' : 'Hidden from farmer catalog',
-                      style: AppTypography.caption(color: AppColors.textMuted),
-                    ),
-                  ],
+                      Text(
+                        _isActive ? 'Visible to farmers for purchase' : 'Hidden from farmer catalog',
+                        style: AppTypography.caption(color: AppColors.textMuted),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 12),
                 Switch(
                   value: _isActive,
                   activeThumbColor: AppColors.canopy,
@@ -555,7 +574,24 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+
+            if (_submitError != null) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.badLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.bad.withValues(alpha: 0.3)),
+                ),
+                child: Text(
+                  _submitError!,
+                  style: AppTypography.bodySmall(color: AppColors.bad),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Submit Button
             SizedBox(
@@ -587,6 +623,7 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -606,11 +643,13 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Seed Product Image',
-                style: AppTypography.caption(
-                  color: AppColors.text,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  'Seed Product Image',
+                  style: AppTypography.caption(
+                    color: AppColors.text,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               if (hasImage)
@@ -658,40 +697,69 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
             ),
           ] else ...[
             if (!_showImageInput) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => setState(() => _showImageInput = true),
-                      icon: const Icon(Icons.link, size: 16),
-                      label: const Text('Enter Image URL'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.text,
-                        side: const BorderSide(color: AppColors.line),
-                      ),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final enterUrlButton = OutlinedButton.icon(
+                    onPressed: () => setState(() => _showImageInput = true),
+                    icon: const Icon(Icons.link, size: 16),
+                    label: const Text(
+                      'Enter Image URL',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  if (widget.onUploadImage != null) ...[
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: _isUploading ? null : _handleImageUpload,
-                        icon: _isUploading
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                              )
-                            : const Icon(Icons.cloud_upload_outlined, size: 16),
-                        label: Text(_isUploading ? 'Uploading...' : 'Upload Image'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.canopy,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.text,
+                      side: const BorderSide(color: AppColors.line),
                     ),
-                  ],
-                ],
+                  );
+                  final uploadButton = widget.onUploadImage == null
+                      ? null
+                      : ElevatedButton.icon(
+                          onPressed: _isUploading ? null : _handleImageUpload,
+                          icon: _isUploading
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.cloud_upload_outlined, size: 16),
+                          label: Text(
+                            _isUploading ? 'Uploading...' : 'Upload Image',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.canopy,
+                            foregroundColor: Colors.white,
+                          ),
+                        );
+
+                  if (constraints.maxWidth < 260) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        enterUrlButton,
+                        if (uploadButton != null) ...[
+                          const SizedBox(height: 8),
+                          uploadButton,
+                        ],
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    children: [
+                      Expanded(child: enterUrlButton),
+                      if (uploadButton != null) ...[
+                        const SizedBox(width: 8),
+                        Expanded(child: uploadButton),
+                      ],
+                    ],
+                  );
+                },
               ),
             ] else ...[
               Row(
@@ -705,13 +773,21 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => setState(() {}),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.canopy,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  Flexible(
+                    fit: FlexFit.loose,
+                    child: ElevatedButton(
+                      onPressed: () => setState(() {}),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.canopy,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                      child: const Text(
+                        'Preview',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
-                    child: const Text('Preview', style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),
@@ -745,11 +821,13 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
             children: [
               const Icon(Icons.military_tech_outlined, size: 16, color: AppColors.canopy),
               const SizedBox(width: 6),
-              Text(
-                'Grade Pricing (₹/kg) — Optional',
-                style: AppTypography.bodySmall(
-                  color: AppColors.text,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  'Grade Pricing (₹/kg) — Optional',
+                  style: AppTypography.bodySmall(
+                    color: AppColors.text,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -818,11 +896,13 @@ class _AddEditSeedSheetState extends State<AddEditSeedSheet> {
             children: [
               const Icon(Icons.warehouse_outlined, size: 16, color: AppColors.canopy),
               const SizedBox(width: 6),
-              Text(
-                'Fulfillment Warehouses (Multi-Select)',
-                style: AppTypography.bodySmall(
-                  color: AppColors.text,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  'Fulfillment Warehouses (Multi-Select)',
+                  style: AppTypography.bodySmall(
+                    color: AppColors.text,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],

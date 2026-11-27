@@ -80,7 +80,9 @@ class BookingCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${AppDates.dayMonthYear(item.bookingDate, fallback: 'Date TBD')} · ${item.displayWarehouse}',
+                      item.enrichedSlotTime != null && item.enrichedSlotTime!.isNotEmpty
+                          ? '${AppDates.dayMonthYear(item.bookingDate, fallback: 'Date TBD')} · ${item.enrichedSlotTime} · ${item.displayWarehouse}'
+                          : '${AppDates.dayMonthYear(item.bookingDate, fallback: 'Date TBD')} · ${item.displayWarehouse}',
                       style: AppTypography.caption(color: AppColors.textFaint),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,

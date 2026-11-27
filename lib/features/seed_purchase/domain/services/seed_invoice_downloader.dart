@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 
 import 'seed_invoice_data.dart';
 import 'seed_invoice_pdf_builder.dart';
+import 'seed_invoice_web_saver.dart';
 
 typedef SeedInvoicePdfBuilderFn = Future<Uint8List> Function(
   SeedInvoiceData data,
@@ -125,6 +127,9 @@ class AndroidInvoiceDownloader implements InvoiceDownloader {
   }
 
   static Future<String?> _defaultSaveFile(Uint8List bytes, String fileName) {
+    if (kIsWeb) {
+      return saveInvoiceBytesOnWeb(bytes, fileName);
+    }
     return FlutterFileDialog.saveFile(
       params: SaveFileDialogParams(
         data: bytes,

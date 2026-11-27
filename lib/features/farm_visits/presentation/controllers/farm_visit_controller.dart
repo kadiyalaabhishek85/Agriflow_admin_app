@@ -29,7 +29,15 @@ class FarmVisitController extends ChangeNotifier {
   bool get isError => _status == FarmVisitViewStatus.error;
 
   List<FarmVisitItem> _visits = [];
-  List<FarmVisitItem> get visits => List.unmodifiable(_visits);
+  List<FarmVisitItem> get visits {
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isEmpty) {
+      return List.unmodifiable(_visits);
+    }
+    return List.unmodifiable(
+      _visits.where((item) => _matchesQuery(item, activeQuery)),
+    );
+  }
 
   FarmVisitPagination _pagination = const FarmVisitPagination(
     page: 1,
@@ -53,14 +61,38 @@ class FarmVisitController extends ChangeNotifier {
   String get activeFilter => _activeFilter;
 
   String _searchQuery = '';
+  String _liveQuery = '';
+  int _loadEpoch = 0;
   String get searchQuery => _searchQuery;
 
   // ID of visit currently undergoing mutation
   String? _actionInFlightId;
   String? get actionInFlightId => _actionInFlightId;
 
+  bool _matchesQuery(FarmVisitItem item, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.displayFarmerName.toLowerCase().contains(q) ||
+        (item.enrichedFarmerPhone ?? '').toLowerCase().contains(q) ||
+        item.displayVillage.toLowerCase().contains(q) ||
+        item.displayCropName.toLowerCase().contains(q) ||
+        item.displayStaffName.toLowerCase().contains(q) ||
+        (item.scheduledDate ?? '').toLowerCase().contains(q) ||
+        item.status.toLowerCase().contains(q) ||
+        item.id.toLowerCase().contains(q);
+  }
+
+  /// Filters already-loaded farm visits immediately while typing.
+  void previewSearch(String query) {
+    final normalized = query.trim();
+    if (_liveQuery == normalized) return;
+    _liveQuery = normalized;
+    notifyListeners();
+  }
+
   /// Loads the first page of farm visits.
   Future<void> loadVisits() async {
+    final epoch = ++_loadEpoch;
     _status = FarmVisitViewStatus.loading;
     _errorMessage = null;
     notifyListeners();
@@ -73,18 +105,45 @@ class FarmVisitController extends ChangeNotifier {
         search: _searchQuery.isEmpty ? null : _searchQuery,
         status: _activeFilter == 'all' ? null : _activeFilter,
       );
+      if (epoch != _loadEpoch) return;
 
-      _visits = result.items;
-      _pagination = result.pagination;
+      final allItems = List<FarmVisitItem>.from(result.items);
+      var latestPagination = result.pagination;
+
+      if (_searchQuery.isNotEmpty &&
+          allItems.any((item) => !_matchesQuery(item, _searchQuery))) {
+        final maxPages = latestPagination.totalPages.clamp(1, 10);
+        for (int p = 2; p <= maxPages; p++) {
+          final nextRes = await repository.getVisits(
+            accessToken: accessToken,
+            page: p,
+            pageSize: 20,
+            search: _searchQuery,
+            status: _activeFilter == 'all' ? null : _activeFilter,
+          );
+          if (epoch != _loadEpoch) return;
+          if (nextRes.items.isEmpty) break;
+          allItems.addAll(nextRes.items);
+          latestPagination = nextRes.pagination;
+        }
+      }
+
+      if (epoch != _loadEpoch) return;
+      _visits = allItems;
+      _pagination = latestPagination;
       _status = FarmVisitViewStatus.success;
     } on FarmVisitException catch (e) {
+      if (epoch != _loadEpoch) return;
       _status = FarmVisitViewStatus.error;
       _errorMessage = e.message;
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       _status = FarmVisitViewStatus.error;
       _errorMessage = ErrorSanitizer.sanitize(e, defaultAction: 'Loading farm visits');
     } finally {
-      notifyListeners();
+      if (epoch == _loadEpoch) {
+        notifyListeners();
+      }
     }
   }
 
@@ -153,8 +212,13 @@ class FarmVisitController extends ChangeNotifier {
 
   /// Updates search query and reloads.
   void setSearchQuery(String query) {
-    if (_searchQuery == query) return;
-    _searchQuery = query;
+    final normalized = query.trim();
+    _liveQuery = normalized;
+    if (_searchQuery == normalized) {
+      notifyListeners();
+      return;
+    }
+    _searchQuery = normalized;
     loadVisits();
   }
 

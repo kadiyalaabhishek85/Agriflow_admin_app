@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_catalog_item.dart';
 import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_purchase_exception.dart';
 import 'package:agriflow_admin/features/seed_purchase/domain/entities/seed_purchase_item.dart';
@@ -27,7 +28,7 @@ abstract class SeedPurchaseRemoteDataSource {
 }
 
 class SeedPurchaseRemoteDataSourceImpl implements SeedPurchaseRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

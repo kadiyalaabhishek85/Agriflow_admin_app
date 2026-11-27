@@ -39,7 +39,7 @@ class SeedsInventoryController extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   String get currentFilter => _currentFilter;
 
-  int get totalSeedsCount => _seeds.where((s) => s.isActive).length;
+  int get totalSeedsCount => _seeds.length;
   int get activeSeedsCount => _seeds.where((s) => s.isActive).length;
   int get inactiveSeedsCount => _seeds.where((s) => !s.isActive).length;
   int get lowStockCount => _seeds.where((s) => s.isActive && s.isLowStock).length;
@@ -50,6 +50,7 @@ class SeedsInventoryController extends ChangeNotifier {
       // 1. Filter tab check
       switch (_currentFilter) {
         case 'all':
+          break;
         case 'active':
           if (!seed.isActive) return false;
           break;

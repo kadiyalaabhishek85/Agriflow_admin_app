@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:agriflow_admin/features/booking_slot/data/datasources/booking_remote_data_source.dart';
 import 'package:agriflow_admin/features/booking_slot/data/repositories/booking_repository_impl.dart';
 import 'package:agriflow_admin/features/booking_slot/domain/entities/booking_exception.dart';
@@ -600,9 +603,9 @@ void main() {
 
       // Filter chips
       expect(find.widgetWithText(FilterChip, 'All (1)'), findsOneWidget);
-      expect(find.widgetWithText(FilterChip, 'Pending'), findsOneWidget);
-      expect(find.widgetWithText(FilterChip, 'Confirmed'), findsOneWidget);
-      expect(find.widgetWithText(FilterChip, 'Cancelled'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Pending (1)'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Confirmed (0)'), findsOneWidget);
+      expect(find.widgetWithText(FilterChip, 'Cancelled (0)'), findsOneWidget);
 
       // Card
       expect(find.byType(BookingCard), findsOneWidget);
@@ -781,6 +784,110 @@ void main() {
 
         addTearDown(tester.view.resetPhysicalSize);
       }
+    });
+
+    testWidgets('Date selection queries booking_date and updates status chip counts', (tester) async {
+      final now = DateTime.now();
+      final todayStr = '${now.year.toString().padLeft(4, '0')}-'
+          '${now.month.toString().padLeft(2, '0')}-'
+          '${now.day.toString().padLeft(2, '0')}';
+      final otherDateStr = '2026-10-03';
+      final requestedUris = <Uri>[];
+
+      final client = MockClient((request) async {
+        requestedUris.add(request.url);
+        if (request.url.path.endsWith('/warehouses')) {
+          return http.Response(jsonEncode({'data': []}), 200);
+        }
+        if (request.url.path.endsWith('/users')) {
+          return http.Response(jsonEncode({'data': []}), 200);
+        }
+        final allBookings = [
+          {
+            'id': 'bk-1',
+            'farmer_id': 'f-1',
+            'warehouse_id': 'w-1',
+            'booking_date': otherDateStr,
+            'grain_type': 'Maize',
+            'quantity_kg': 300,
+            'status': 'confirmed',
+          },
+          {
+            'id': 'bk-2',
+            'farmer_id': 'f-1',
+            'warehouse_id': 'w-1',
+            'booking_date': otherDateStr,
+            'grain_type': 'Groundnut',
+            'quantity_kg': 55,
+            'status': 'delivered',
+          },
+        ];
+
+        final reqDate = request.url.queryParameters['booking_date'];
+        final reqStatus = request.url.queryParameters['status'];
+        var filtered = allBookings.where((b) {
+          if (reqDate != null && b['booking_date'] != reqDate) return false;
+          if (reqStatus != null && b['status'] != reqStatus) return false;
+          return true;
+        }).toList();
+
+        return http.Response(
+          jsonEncode({
+            'data': filtered,
+            'pagination': {
+              'page': 1,
+              'page_size': 20,
+              'total': filtered.length,
+              'total_pages': filtered.isEmpty ? 0 : 1,
+            },
+          }),
+          200,
+        );
+      });
+
+      final ds = BookingRemoteDataSourceImpl(baseUrl: 'https://api.example.com', client: client);
+      final repo = BookingRepositoryImpl(remoteDataSource: ds);
+      final controller = BookingController(repository: repo, accessToken: 'token');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BookingSlotScreen(
+              controller: controller,
+              onBack: () {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Initially "Show All" shows total 2, Confirmed 1, Delivered 1.
+      expect(find.text('All (2)'), findsOneWidget);
+      expect(find.text('Confirmed (1)'), findsOneWidget);
+      expect(find.text('Delivered (1)'), findsOneWidget);
+      expect(find.byType(BookingCard), findsNWidgets(2));
+
+      // Tap "Today" which has 0 bookings.
+      await tester.tap(find.text('Today'));
+      await tester.pumpAndSettle();
+
+      expect(
+        requestedUris.any((u) => u.queryParameters['booking_date'] == todayStr),
+        isTrue,
+      );
+      expect(find.text('No bookings found'), findsOneWidget);
+      expect(find.text('All (0)'), findsOneWidget);
+      expect(find.text('Confirmed (0)'), findsOneWidget);
+      expect(find.text('Delivered (0)'), findsOneWidget);
+
+      // Tap "Show" ("Show All") to restore bookings and status counts.
+      await tester.tap(find.text('Show'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('All (2)'), findsOneWidget);
+      expect(find.text('Confirmed (1)'), findsOneWidget);
+      expect(find.text('Delivered (1)'), findsOneWidget);
+      expect(find.byType(BookingCard), findsNWidgets(2));
     });
   });
 }

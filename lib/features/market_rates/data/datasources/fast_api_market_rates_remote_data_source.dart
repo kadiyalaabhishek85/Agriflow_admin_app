@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 
 import '../../domain/entities/market_rate_item.dart';
 import '../../domain/exceptions/market_rates_exception.dart';
@@ -21,8 +22,7 @@ import 'market_rates_remote_data_source.dart';
 /// Viewing the rate board must not break when a session token is missing or
 /// expired. Mutations (`setRate`) NEVER fall back — they require auth.
 class FastApiMarketRatesRemoteDataSource implements MarketRatesRemoteDataSource {
-  static const String defaultBaseUrl =
-      'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

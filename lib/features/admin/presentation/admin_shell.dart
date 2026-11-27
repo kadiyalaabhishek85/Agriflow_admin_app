@@ -144,6 +144,7 @@ class AdminShell extends StatefulWidget {
 class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
   String _currentRoute = NavDestination.home.id;
   int _selectedTabIndex = -1; // -1 when on non-tab screen (e.g. Dashboard)
+  final List<String> _routeHistory = [];
   late final AdminDashboardController _dashboardController;
   late final SeedPurchaseController _seedPurchaseController;
   late final BookingController _bookingController;
@@ -193,7 +194,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _bookingController = widget.bookingController ??
         BookingController(
           repository: BookingRepositoryImpl(
-            remoteDataSource: BookingRemoteDataSourceImpl(),
+            remoteDataSource: BookingRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -209,8 +212,12 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _grainSalesController = widget.grainSalesController ??
         GrainSaleController(
           repository: GrainSaleRepositoryImpl(
-            remoteDataSource: GrainSaleRemoteDataSourceImpl(),
-            bookingDataSource: BookingRemoteDataSourceImpl(),
+            remoteDataSource: GrainSaleRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
+            bookingDataSource: BookingRemoteDataSourceImpl(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -226,7 +233,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _seedsInventoryController = widget.seedsInventoryController ??
         SeedsInventoryController(
           repository: SeedsInventoryRepositoryImpl(
-            remoteDataSource: FastApiSeedsInventoryRemoteDataSource(),
+            remoteDataSource: FastApiSeedsInventoryRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -234,7 +243,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _warehouseController = widget.warehouseController ??
         WarehouseController(
           repository: WarehouseRepositoryImpl(
-            remoteDataSource: FastApiWarehouseRemoteDataSource(),
+            remoteDataSource: FastApiWarehouseRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
           isAdmin: true,
@@ -243,7 +254,9 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     _billingController = widget.billingController ??
         BillingController(
           repository: BillingRepositoryImpl(
-            remoteDataSource: FastApiBillingRemoteDataSource(),
+            remoteDataSource: FastApiBillingRemoteDataSource(
+              apiClient: widget.apiClient,
+            ),
           ),
           accessToken: widget.session.accessToken,
         );
@@ -371,38 +384,57 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
         );
   }
 
-  void _onTabSelected(int index) {
-    setState(() {
-      _selectedTabIndex = index;
-      switch (index) {
-        case 0:
-          _currentRoute = NavDestination.seedPurchase.id;
-          break;
-        case 1:
-          _currentRoute = NavDestination.bookingSlot.id;
-          break;
-        case 2:
-          _currentRoute = NavDestination.farmVisits.id;
-          break;
-        case 3:
-          _currentRoute = NavDestination.grainSales.id;
-          break;
+  void _pushHistory(String fromRoute) {
+    if (_routeHistory.isEmpty || _routeHistory.last != fromRoute) {
+      _routeHistory.add(fromRoute);
+      if (_routeHistory.length > 30) {
+        _routeHistory.removeAt(0);
       }
+    }
+  }
+
+  void _onTabSelected(int index) {
+    String nextRoute = _currentRoute;
+    switch (index) {
+      case 0:
+        nextRoute = NavDestination.seedPurchase.id;
+        break;
+      case 1:
+        nextRoute = NavDestination.bookingSlot.id;
+        break;
+      case 2:
+        nextRoute = NavDestination.farmVisits.id;
+        break;
+      case 3:
+        nextRoute = NavDestination.grainSales.id;
+        break;
+    }
+    if (nextRoute == _currentRoute) return;
+    setState(() {
+      _pushHistory(_currentRoute);
+      _selectedTabIndex = index;
+      _currentRoute = nextRoute;
     });
   }
 
   void _onNavigate(String route) {
+    if (route == _currentRoute) return;
     setState(() {
+      _pushHistory(_currentRoute);
       _currentRoute = route;
       final destination = NavDestination.fromId(route);
       _selectedTabIndex = destination.adminTabIndex ?? -1;
     });
   }
 
-  void _backToHome() {
+  void _goBack() {
     setState(() {
-      _currentRoute = NavDestination.home.id;
-      _selectedTabIndex = -1;
+      final previous = _routeHistory.isNotEmpty
+          ? _routeHistory.removeLast()
+          : NavDestination.home.id;
+      _currentRoute = previous;
+      final destination = NavDestination.fromId(previous);
+      _selectedTabIndex = destination.adminTabIndex ?? -1;
     });
   }
 
@@ -465,10 +497,10 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
       listenable: _notificationController,
       builder: (context, _) {
         return PopScope(
-          canPop: _currentRoute == NavDestination.home.id,
+          canPop: _currentRoute == NavDestination.home.id && _routeHistory.isEmpty,
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop) {
-              _backToHome();
+              _goBack();
             }
           },
           child: AppScaffold(
@@ -502,7 +534,7 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     if (_currentRoute == NavDestination.seedPurchase.id) {
       return SeedPurchaseScreen(
         controller: _seedPurchaseController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
@@ -510,28 +542,28 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
       return SeedsInventoryScreen(
         controller: _seedsInventoryController,
         isAdmin: true,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.bookingSlot.id) {
       return BookingSlotScreen(
         controller: _bookingController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.farmVisits.id) {
       return FarmVisitScreen(
         controller: _farmVisitsController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.grainSales.id) {
       return GrainSaleScreen(
         controller: _grainSalesController,
-        onBack: _backToHome,
+        onBack: _goBack,
         isManagerRole: false,
       );
     }
@@ -539,7 +571,7 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     if (_currentRoute == NavDestination.allFarmers.id) {
       return FarmerScreen(
         controller: _farmerController,
-        onBack: _backToHome,
+        onBack: _goBack,
         isManagerRole: false,
       );
     }
@@ -548,14 +580,14 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
       return WarehouseScreen(
         controller: _warehouseController,
         isAdmin: true,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.billing.id) {
       return BillingScreen(
         controller: _billingController,
-        onBack: _backToHome,
+        onBack: _goBack,
         isManagerRole: false,
       );
     }
@@ -563,35 +595,35 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
     if (_currentRoute == NavDestination.marketRates.id) {
       return MarketRatesScreen(
         controller: _marketRatesController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.notifications.id) {
       return NotificationScreen(
         controller: _notificationController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.managers.id) {
       return ManagerScreen(
         controller: _managerController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.reports.id) {
       return ReportScreen(
         controller: _reportController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.eventLogs.id) {
       return EventLogScreen(
         controller: _eventLogController,
-        onBack: _backToHome,
+        onBack: _goBack,
       );
     }
 
@@ -599,20 +631,20 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
       return AccountScreen(
         session: widget.session,
         onLogout: widget.onLogout,
-        onBack: _backToHome,
+        onBack: _goBack,
         authController: widget.authController,
       );
     }
 
     if (_currentRoute == NavDestination.settings.id) {
       return SettingsScreen(
-        onBack: () => _onNavigate(NavDestination.account.id),
+        onBack: _goBack,
       );
     }
 
     if (_currentRoute == NavDestination.help.id) {
       return HelpScreen(
-        onBack: () => _onNavigate(NavDestination.account.id),
+        onBack: _goBack,
       );
     }
 
@@ -622,7 +654,7 @@ class _AdminShellState extends State<AdminShell> with WidgetsBindingObserver {
       destinationId: destination.id,
       icon: destination.icon,
       role: role,
-      onBackToDashboard: _backToHome,
+      onBackToDashboard: _goBack,
     );
   }
 }

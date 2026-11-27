@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 
+import '../../../seed_purchase/domain/services/seed_invoice_web_saver.dart';
 import '../../domain/receipt/billing_receipt_data.dart';
 import '../../domain/receipt/receipt_pdf_builder.dart';
 import '../../domain/services/receipt_downloader.dart';
@@ -98,6 +100,9 @@ class AndroidReceiptDownloader implements ReceiptDownloader {
   }
 
   static Future<String?> _defaultSaveFile(Uint8List bytes, String fileName) {
+    if (kIsWeb) {
+      return saveInvoiceBytesOnWeb(bytes, fileName);
+    }
     return FlutterFileDialog.saveFile(
       params: SaveFileDialogParams(
         data: bytes,

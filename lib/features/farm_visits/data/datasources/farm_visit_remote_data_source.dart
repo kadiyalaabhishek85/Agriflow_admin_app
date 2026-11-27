@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 import 'package:http_parser/http_parser.dart';
 import 'package:agriflow_admin/features/farmers/data/farmer_lookup_service.dart';
 import '../../domain/entities/farm_visit_exception.dart';
@@ -68,7 +69,7 @@ abstract class FarmVisitRemoteDataSource {
 }
 
 class FarmVisitRemoteDataSourceImpl implements FarmVisitRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

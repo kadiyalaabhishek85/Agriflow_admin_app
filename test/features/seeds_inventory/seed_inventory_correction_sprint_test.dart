@@ -594,9 +594,9 @@ void main() {
       final ok = await controller.deleteSeed('seed-1');
       expect(ok, isTrue);
 
-      // Verify immediate disappearance from All, Active, Low Stock
+      // Verify immediate disappearance from Active and Low Stock while All retains total catalog
       controller.setFilter('all');
-      expect(controller.filteredSeeds.any((s) => s.id == 'seed-1'), isFalse);
+      expect(controller.filteredSeeds.any((s) => s.id == 'seed-1'), isTrue);
 
       controller.setFilter('active');
       expect(controller.filteredSeeds.any((s) => s.id == 'seed-1'), isFalse);
@@ -612,9 +612,9 @@ void main() {
       // Refresh / re-fetch from backend
       await controller.loadSeeds(refresh: true);
 
-      // Verify remains absent from All, Active, Low Stock after refresh
+      // Verify remains absent from Active and Low Stock after refresh while All keeps total items
       controller.setFilter('all');
-      expect(controller.filteredSeeds.any((s) => s.id == 'seed-1'), isFalse);
+      expect(controller.filteredSeeds.any((s) => s.id == 'seed-1'), isTrue);
 
       controller.setFilter('active');
       expect(controller.filteredSeeds.any((s) => s.id == 'seed-1'), isFalse);
@@ -650,14 +650,13 @@ void main() {
       final controller = SeedsInventoryController(repository: repo, accessToken: 'token');
 
       await controller.loadSeeds();
-      expect(controller.totalSeedsCount, 1);
+      expect(controller.totalSeedsCount, 2);
       expect(controller.activeSeedsCount, 1);
       expect(controller.inactiveSeedsCount, 1);
 
-      // 'all' tab shows active only
+      // 'all' tab shows all seeds (active + inactive)
       controller.setFilter('all');
-      expect(controller.filteredSeeds.length, 1);
-      expect(controller.filteredSeeds.first.id, 'seed-active');
+      expect(controller.filteredSeeds.length, 2);
 
       // 'active' tab shows active only
       controller.setFilter('active');

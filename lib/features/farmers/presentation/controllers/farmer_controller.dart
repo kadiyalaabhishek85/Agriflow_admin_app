@@ -26,6 +26,8 @@ class FarmerController extends ChangeNotifier {
   String? _errorMessage;
 
   String _searchQuery = '';
+  String _liveQuery = '';
+  int _loadEpoch = 0;
   String _currentFilter = 'all'; // 'all', 'active', 'pending', 'rejected', 'suspended'
 
   FarmerItem? _selectedFarmer;
@@ -37,8 +39,35 @@ class FarmerController extends ChangeNotifier {
   bool _isLoadingBankRequests = false;
   String? _bankRequestsError;
 
+  bool _matchesQuery(FarmerItem item, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.name.toLowerCase().contains(q) ||
+        item.phone.toLowerCase().contains(q) ||
+        (item.email ?? '').toLowerCase().contains(q) ||
+        item.villageOrAddress.toLowerCase().contains(q) ||
+        item.status.toLowerCase().contains(q) ||
+        item.id.toLowerCase().contains(q);
+  }
+
+  /// Filters already-loaded farmers immediately while typing.
+  void previewSearch(String query) {
+    final normalized = query.trim();
+    if (_liveQuery == normalized) return;
+    _liveQuery = normalized;
+    notifyListeners();
+  }
+
   // Getters
-  List<FarmerItem> get farmers => List.unmodifiable(_farmers);
+  List<FarmerItem> get farmers {
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isEmpty) {
+      return List.unmodifiable(_farmers);
+    }
+    return List.unmodifiable(
+      _farmers.where((item) => _matchesQuery(item, activeQuery)),
+    );
+  }
   FarmerPagination get pagination => _pagination;
   bool get isLoading => _isLoading;
   bool get isRefreshing => _isRefreshing;
@@ -67,7 +96,7 @@ class FarmerController extends ChangeNotifier {
 
   /// Loads initial page of farmers with active filters
   Future<void> loadFarmers({bool refresh = false}) async {
-    if (_isLoading) return;
+    final epoch = ++_loadEpoch;
 
     if (refresh) {
       _isRefreshing = true;
@@ -85,18 +114,45 @@ class FarmerController extends ChangeNotifier {
         search: _searchQuery.isNotEmpty ? _searchQuery : null,
         status: _currentFilter != 'all' ? _currentFilter : null,
       );
+      if (epoch != _loadEpoch) return;
 
-      _farmers = List.from(result.items);
-      _pagination = result.pagination;
+      final allItems = List<FarmerItem>.from(result.items);
+      var latestPagination = result.pagination;
+
+      if (_searchQuery.isNotEmpty &&
+          allItems.any((item) => !_matchesQuery(item, _searchQuery))) {
+        final maxPages = latestPagination.totalPages.clamp(1, 10);
+        for (int p = 2; p <= maxPages; p++) {
+          final nextRes = await repository.getFarmers(
+            accessToken: accessToken,
+            page: p,
+            pageSize: _pagination.pageSize,
+            search: _searchQuery,
+            status: _currentFilter != 'all' ? _currentFilter : null,
+          );
+          if (epoch != _loadEpoch) return;
+          if (nextRes.items.isEmpty) break;
+          allItems.addAll(nextRes.items);
+          latestPagination = nextRes.pagination;
+        }
+      }
+
+      if (epoch != _loadEpoch) return;
+      _farmers = allItems;
+      _pagination = latestPagination;
       _errorMessage = null;
     } on FarmerException catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage = e.message;
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage = ErrorSanitizer.sanitize(e, defaultAction: 'Loading farmers');
     } finally {
-      _isLoading = false;
-      _isRefreshing = false;
-      notifyListeners();
+      if (epoch == _loadEpoch) {
+        _isLoading = false;
+        _isRefreshing = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -136,8 +192,13 @@ class FarmerController extends ChangeNotifier {
 
   /// Sets live search query and reloads dataset
   void setSearchQuery(String query) {
-    if (_searchQuery == query) return;
-    _searchQuery = query;
+    final normalized = query.trim();
+    _liveQuery = normalized;
+    if (_searchQuery == normalized) {
+      notifyListeners();
+      return;
+    }
+    _searchQuery = normalized;
     loadFarmers();
   }
 

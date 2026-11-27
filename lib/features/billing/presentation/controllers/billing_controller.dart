@@ -39,6 +39,7 @@ class BillingController extends ChangeNotifier {
   int _requestGeneration = 0;
 
   String _searchQuery = '';
+  String _liveQuery = '';
   String _statusFilter = 'all'; // 'all', 'completed', 'pending', 'failed'
   String? _referenceTypeFilter; // 'seed_purchase', 'grain_sale', 'billing', 'other'
   String? _directionFilter; // 'credit', 'debit'
@@ -47,7 +48,36 @@ class BillingController extends ChangeNotifier {
 
   Map<String, ({String name, String phone, String? village})> _farmers = {};
 
-  List<BillingTransactionItem> get transactions => List.unmodifiable(_transactions);
+  bool _matchesQuery(BillingTransactionItem item, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.displayFarmerName.toLowerCase().contains(q) ||
+        (item.enrichedFarmerPhone ?? '').toLowerCase().contains(q) ||
+        item.displayInvoiceNumber.toLowerCase().contains(q) ||
+        (item.description ?? '').toLowerCase().contains(q) ||
+        item.displayReferenceType.toLowerCase().contains(q) ||
+        item.status.toLowerCase().contains(q) ||
+        item.farmerId.toLowerCase().contains(q) ||
+        item.id.toLowerCase().contains(q);
+  }
+
+  /// Filters already-loaded transactions immediately while typing.
+  void previewSearch(String query) {
+    final normalized = query.trim();
+    if (_liveQuery == normalized) return;
+    _liveQuery = normalized;
+    notifyListeners();
+  }
+
+  List<BillingTransactionItem> get transactions {
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isEmpty) {
+      return List.unmodifiable(_transactions);
+    }
+    return List.unmodifiable(
+      _transactions.where((item) => _matchesQuery(item, activeQuery)),
+    );
+  }
   BillingPagination get pagination => _pagination;
   BillingMetrics get metrics => _metrics;
 
@@ -100,8 +130,34 @@ class BillingController extends ChangeNotifier {
       // Stale response: a newer load superseded this one — discard it.
       if (generation != _requestGeneration) return;
 
-      _transactions = _enrichList(result.items);
-      _pagination = result.pagination;
+      final allItems = List<BillingTransactionItem>.from(_enrichList(result.items));
+      var latestPagination = result.pagination;
+
+      if (_searchQuery.isNotEmpty &&
+          allItems.any((item) => !_matchesQuery(item, _searchQuery))) {
+        final maxPages = latestPagination.totalPages.clamp(1, 10);
+        for (int p = 2; p <= maxPages; p++) {
+          final nextRes = await repository.getTransactions(
+            accessToken: accessToken,
+            page: p,
+            pageSize: _pagination.pageSize,
+            search: _searchQuery,
+            referenceType: _referenceTypeFilter != 'all' ? _referenceTypeFilter : null,
+            direction: _directionFilter != 'all' ? _directionFilter : null,
+            status: _statusFilter != 'all' ? _statusFilter : null,
+            fromDate: fromStr,
+            toDate: toStr,
+          );
+          if (generation != _requestGeneration) return;
+          if (nextRes.items.isEmpty) break;
+          allItems.addAll(_enrichList(nextRes.items));
+          latestPagination = nextRes.pagination;
+        }
+      }
+
+      if (generation != _requestGeneration) return;
+      _transactions = allItems;
+      _pagination = latestPagination;
       _metrics = result.metrics;
       _errorMessage = null;
     } on BillingException catch (e) {
@@ -170,8 +226,13 @@ class BillingController extends ChangeNotifier {
 
   /// Search query setter with debounce / reset
   void setSearchQuery(String query) {
-    if (_searchQuery == query) return;
-    _searchQuery = query;
+    final normalized = query.trim();
+    _liveQuery = normalized;
+    if (_searchQuery == normalized) {
+      notifyListeners();
+      return;
+    }
+    _searchQuery = normalized;
     loadTransactions();
   }
 
@@ -223,6 +284,67 @@ class BillingController extends ChangeNotifier {
       notifyListeners();
     } catch (_) {
       // Keep empty if lookup fails
+    }
+  }
+
+  /// Creates a manual transaction / bill via POST /api/v1/transactions
+  Future<bool> createTransaction({
+    required String farmerId,
+    required double amount,
+    required String direction,
+    required String referenceType,
+    String? description,
+  }) async {
+    _isSubmitting = true;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final created = await repository.createTransaction(
+        accessToken: accessToken,
+        farmerId: farmerId,
+        amount: amount,
+        direction: direction,
+        referenceType: referenceType,
+        description: description,
+      );
+
+      final enriched = _enrichItem(created);
+      final matchesStatus =
+          _statusFilter == 'all' || enriched.status.toLowerCase() == _statusFilter.toLowerCase();
+      final matchesType = _referenceTypeFilter == null ||
+          _referenceTypeFilter == 'all' ||
+          enriched.referenceType.toLowerCase() == _referenceTypeFilter!.toLowerCase();
+      final matchesDirection = _directionFilter == null ||
+          _directionFilter == 'all' ||
+          enriched.direction.toLowerCase() == _directionFilter!.toLowerCase();
+      final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+      final matchesSearch =
+          activeQuery.isEmpty || _matchesQuery(enriched, activeQuery);
+
+      if (matchesStatus && matchesType && matchesDirection && matchesSearch) {
+        _transactions.insert(0, enriched);
+        _pagination = _pagination.copyWith(total: _pagination.total + 1);
+        _metrics = BillingMetrics.fromTransactions(
+          _transactions,
+          totalCount: _pagination.total,
+        );
+      }
+
+      _errorMessage = null;
+      notifyListeners();
+      return true;
+    } on BillingException catch (e) {
+      _errorMessage = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _errorMessage = ErrorSanitizer.sanitize(e, defaultAction: 'Recording transaction');
+      notifyListeners();
+      return false;
+    } finally {
+      _isSubmitting = false;
+      notifyListeners();
     }
   }
 

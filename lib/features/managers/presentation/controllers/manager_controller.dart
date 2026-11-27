@@ -26,9 +26,40 @@ class ManagerController extends ChangeNotifier {
   bool _isSubmitting = false;
   String? _errorMessage;
   String _searchQuery = '';
+  String _liveQuery = '';
+  int _loadEpoch = 0;
   String _statusFilter = 'all';
 
-  List<ManagerItem> get managers => List.unmodifiable(_managers);
+  bool _matchesQuery(ManagerItem item, String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return item.name.toLowerCase().contains(q) ||
+        item.phone.toLowerCase().contains(q) ||
+        (item.email ?? '').toLowerCase().contains(q) ||
+        (item.assignedRegion ?? '').toLowerCase().contains(q) ||
+        (item.department ?? '').toLowerCase().contains(q) ||
+        item.role.toLowerCase().contains(q) ||
+        item.status.toLowerCase().contains(q) ||
+        item.id.toLowerCase().contains(q);
+  }
+
+  /// Filters already-loaded managers immediately while typing.
+  void previewSearch(String query) {
+    final normalized = query.trim();
+    if (_liveQuery == normalized) return;
+    _liveQuery = normalized;
+    notifyListeners();
+  }
+
+  List<ManagerItem> get managers {
+    final activeQuery = _liveQuery.isNotEmpty ? _liveQuery : _searchQuery;
+    if (activeQuery.isEmpty) {
+      return List.unmodifiable(_managers);
+    }
+    return List.unmodifiable(
+      _managers.where((item) => _matchesQuery(item, activeQuery)),
+    );
+  }
   ManagerPagination get pagination => _pagination;
   bool get isLoading => _isLoading;
   bool get isLoadingMore => _isLoadingMore;
@@ -47,6 +78,7 @@ class ManagerController extends ChangeNotifier {
 
   /// Loads page 1 with the current search/status filters.
   Future<void> loadManagers({bool refresh = false}) async {
+    final epoch = ++_loadEpoch;
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
@@ -58,18 +90,45 @@ class ManagerController extends ChangeNotifier {
         search: _searchQuery.isEmpty ? null : _searchQuery,
         status: _statusFilter == 'all' ? null : _statusFilter,
       );
+      if (epoch != _loadEpoch) return;
+
+      final allItems = List<ManagerItem>.from(result.items);
+      var latestPagination = result.pagination;
+
+      if (_searchQuery.isNotEmpty &&
+          allItems.any((item) => !_matchesQuery(item, _searchQuery))) {
+        final maxPages = latestPagination.totalPages.clamp(1, 10);
+        for (int p = 2; p <= maxPages; p++) {
+          final nextRes = await repository.getManagers(
+            accessToken: accessToken,
+            page: p,
+            search: _searchQuery,
+            status: _statusFilter == 'all' ? null : _statusFilter,
+          );
+          if (epoch != _loadEpoch) return;
+          if (nextRes.items.isEmpty) break;
+          allItems.addAll(nextRes.items);
+          latestPagination = nextRes.pagination;
+        }
+      }
+
+      if (epoch != _loadEpoch) return;
       _managers
         ..clear()
-        ..addAll(result.items);
-      _pagination = result.pagination;
+        ..addAll(allItems);
+      _pagination = latestPagination;
     } on ManagersException catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage = e.message;
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       _errorMessage =
           ErrorSanitizer.sanitize(e, defaultAction: 'Loading managers');
     } finally {
-      _isLoading = false;
-      notifyListeners();
+      if (epoch == _loadEpoch) {
+        _isLoading = false;
+        notifyListeners();
+      }
     }
   }
 
@@ -102,8 +161,13 @@ class ManagerController extends ChangeNotifier {
 
   /// Server-side search (the contract exposes a `search` query param).
   Future<void> setSearchQuery(String query) async {
-    if (_searchQuery == query) return;
-    _searchQuery = query;
+    final normalized = query.trim();
+    _liveQuery = normalized;
+    if (_searchQuery == normalized) {
+      notifyListeners();
+      return;
+    }
+    _searchQuery = normalized;
     await loadManagers();
   }
 

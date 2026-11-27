@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../data/repositories/warehouse_repository_impl.dart';
 import '../../domain/entities/warehouse_inventory_item.dart';
 import '../../domain/entities/warehouse_item.dart';
 import '../../domain/entities/warehouse_slot_item.dart';
@@ -20,6 +21,7 @@ class WarehouseController extends ChangeNotifier {
   List<WarehouseItem> _warehouses = [];
   WarehouseItem? _selectedWarehouse;
   List<WarehouseInventoryItem> _selectedInventory = [];
+  List<WarehouseInventoryItem> _selectedBookedStock = [];
   List<WarehouseSlotItem> _selectedSlots = [];
 
   bool _isLoading = false;
@@ -30,13 +32,14 @@ class WarehouseController extends ChangeNotifier {
   String? _successMessage;
 
   String _searchQuery = '';
-  String _currentFilter = 'all'; // 'all', 'active', 'near_full'
+  String _currentFilter = 'all'; // 'all', 'active', 'inactive', 'near_full'
 
   // Getters
   List<WarehouseItem> get allWarehouses => List.unmodifiable(_warehouses);
   List<WarehouseItem> get warehouses => allWarehouses;
   WarehouseItem? get selectedWarehouse => _selectedWarehouse;
   List<WarehouseInventoryItem> get selectedInventory => List.unmodifiable(_selectedInventory);
+  List<WarehouseInventoryItem> get selectedBookedStock => List.unmodifiable(_selectedBookedStock);
   List<WarehouseSlotItem> get selectedSlots => List.unmodifiable(_selectedSlots);
 
   bool get isLoading => _isLoading;
@@ -50,6 +53,7 @@ class WarehouseController extends ChangeNotifier {
 
   int get totalWarehousesCount => _warehouses.length;
   int get activeWarehousesCount => _warehouses.where((w) => w.isActive).length;
+  int get inactiveWarehousesCount => _warehouses.where((w) => !w.isActive).length;
   int get nearFullCount => _warehouses.where((w) => w.isNearCapacity || w.isOverCapacity).length;
 
   double get totalCapacityQtl =>
@@ -69,6 +73,9 @@ class WarehouseController extends ChangeNotifier {
   List<WarehouseItem> get filteredWarehouses {
     return _warehouses.where((warehouse) {
       if (_currentFilter == 'active' && !warehouse.isActive) {
+        return false;
+      }
+      if (_currentFilter == 'inactive' && warehouse.isActive) {
         return false;
       }
       if (_currentFilter == 'near_full' &&
@@ -125,21 +132,23 @@ class WarehouseController extends ChangeNotifier {
     }
   }
 
-  /// Select a warehouse and load its inventory and slots
+  /// Select a warehouse and load its inventory, booked stock, and slots
   Future<void> selectWarehouse(WarehouseItem warehouse) async {
     _selectedWarehouse = warehouse;
     _selectedInventory = [];
+    _selectedBookedStock = [];
     _selectedSlots = [];
     _isLoadingDetails = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
+      final repo = repository;
       final results = await Future.wait([
         repository.getWarehouseInventory(
           accessToken: accessToken,
           warehouseId: warehouse.id,
-        ).catchError((_) => <WarehouseInventoryItem>[]),
+        ),
         repository.getWarehouseSlots(
           accessToken: accessToken,
           warehouseId: warehouse.id,
@@ -148,11 +157,19 @@ class WarehouseController extends ChangeNotifier {
           accessToken: accessToken,
           warehouseId: warehouse.id,
         ).catchError((_) => warehouse),
+        if (repo is WarehouseRepositoryImpl)
+          repo.getBookedStockForWarehouse(
+            accessToken: accessToken,
+            warehouseId: warehouse.id,
+          )
+        else
+          Future.value(<WarehouseInventoryItem>[]),
       ]);
 
       _selectedInventory = results[0] as List<WarehouseInventoryItem>;
       _selectedSlots = results[1] as List<WarehouseSlotItem>;
       _selectedWarehouse = results[2] as WarehouseItem;
+      _selectedBookedStock = results[3] as List<WarehouseInventoryItem>;
 
       // Update in main list as well
       final idx = _warehouses.indexWhere((w) => w.id == warehouse.id);
@@ -172,6 +189,7 @@ class WarehouseController extends ChangeNotifier {
   void clearSelectedWarehouse() {
     _selectedWarehouse = null;
     _selectedInventory = [];
+    _selectedBookedStock = [];
     _selectedSlots = [];
     notifyListeners();
   }
@@ -194,6 +212,12 @@ class WarehouseController extends ChangeNotifier {
   void clearMessages() {
     _errorMessage = null;
     _successMessage = null;
+    notifyListeners();
+  }
+
+  void clearError() {
+    if (_errorMessage == null) return;
+    _errorMessage = null;
     notifyListeners();
   }
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../../core/constants/app_colors.dart';
 import '../../../../core/constants/app_typography.dart';
@@ -29,6 +30,7 @@ class GrainSaleScreen extends StatefulWidget {
 class _GrainSaleScreenState extends State<GrainSaleScreen> {
   final _scrollController = ScrollController();
   final _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -42,10 +44,22 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() {});
+    widget.controller.previewSearch(val);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.controller.setSearchQuery(val);
+      }
+    });
   }
 
   void _onScroll() {
@@ -62,6 +76,7 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
       context: context,
       item: saleItem,
       isSubmitting: widget.controller.isSubmitting,
+      errorMessage: () => widget.controller.errorMessage,
       onReview: () async {
         final success = await widget.controller.reviewGrainSale(
           saleId: saleItem.id,
@@ -74,14 +89,6 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
             const SnackBar(
               backgroundColor: AppColors.canopyDeep,
               content: Text('Grain sale reviewed and approved successfully!'),
-            ),
-          );
-        } else {
-          final error = widget.controller.errorMessage ?? 'Failed to review and approve sale.';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.alert,
-              content: Text(error),
             ),
           );
         }
@@ -101,14 +108,6 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
               content: Text('Grain procurement rejected.'),
             ),
           );
-        } else {
-          final error = widget.controller.errorMessage ?? 'Failed to reject sale.';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.alert,
-              content: Text(error),
-            ),
-          );
         }
       },
       onPay: () async {
@@ -120,14 +119,6 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
             const SnackBar(
               backgroundColor: AppColors.canopyDeep,
               content: Text('Payment approved and marked as paid!'),
-            ),
-          );
-        } else {
-          final error = widget.controller.errorMessage ?? 'Failed to mark payment as paid.';
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: AppColors.alert,
-              content: Text(error),
             ),
           );
         }
@@ -170,6 +161,7 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
       context: context,
       farmers: widget.controller.farmers,
       isSubmitting: widget.controller.isSubmitting,
+      errorMessage: () => widget.controller.errorMessage,
       onSubmit: ({
         required farmerId,
         required grainType,
@@ -188,7 +180,10 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
         );
         if (ok && context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Crop procurement logged successfully!')),
+            const SnackBar(
+              backgroundColor: AppColors.canopyDeep,
+              content: Text('Crop procurement logged successfully!'),
+            ),
           );
         }
         return ok;
@@ -196,13 +191,16 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
     );
   }
 
-  Widget _buildFilterChip(String label, String filterKey) {
+  Widget _buildFilterChip(String baseLabel, String filterKey) {
     final isActive = widget.controller.currentFilter == filterKey;
+    final count = widget.controller.countForFilter(filterKey);
+    final label = count != null ? '$baseLabel ($count)' : baseLabel;
+
     return GestureDetector(
       key: Key('grain_chip_$filterKey'),
       onTap: () => widget.controller.setFilter(filterKey),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: isActive ? AppColors.canopyDeep : AppColors.surface,
           borderRadius: BorderRadius.circular(20),
@@ -215,7 +213,10 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
           label,
           style: AppTypography.caption(
             color: isActive ? Colors.white : AppColors.textMuted,
-          ).copyWith(fontWeight: isActive ? FontWeight.w800 : FontWeight.w600),
+          ).copyWith(
+            fontSize: 11.5,
+            fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -296,7 +297,12 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
                       // Live Search Bar
                       TextField(
                         controller: _searchController,
-                        onChanged: (val) => controller.setSearchQuery(val.trim()),
+                        textInputAction: TextInputAction.search,
+                        onChanged: _onSearchChanged,
+                        onSubmitted: (val) {
+                          _searchDebounce?.cancel();
+                          controller.setSearchQuery(val);
+                        },
                         decoration: InputDecoration(
                           hintText: 'Search farmer or grain type...',
                           prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textMuted, size: 20),
@@ -304,7 +310,9 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
                               ? IconButton(
                                   icon: const Icon(Icons.clear_rounded, size: 18),
                                   onPressed: () {
+                                    _searchDebounce?.cancel();
                                     _searchController.clear();
+                                    setState(() {});
                                     controller.setSearchQuery('');
                                   },
                                 )
@@ -324,23 +332,28 @@ class _GrainSaleScreenState extends State<GrainSaleScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Filter Chips Row
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _buildFilterChip('All', 'all'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Pending', 'pending'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Received', 'received'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Approved', 'approved'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Rejected', 'rejected'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Paid', 'paid'),
-                          ],
+                      // Filter Chips Row (single-line clean fit so Rejected & Paid stay visible)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildFilterChip('All', 'all'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('Pending', 'pending'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('Received', 'received'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('Approved', 'approved'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('Rejected', 'rejected'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('Paid', 'paid'),
+                            ],
+                          ),
                         ),
                       ),
                     ],

@@ -46,11 +46,13 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
   }
 
   void _openAddWarehouseSheet() {
+    widget.controller.clearError();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => AddEditWarehouseSheet(
+        errorMessage: () => widget.controller.errorMessage,
         onSave: ({
           required name,
           required address,
@@ -73,26 +75,26 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
               context,
               widget.controller.successMessage ?? 'Warehouse created successfully.',
             );
-          } else if (mounted && widget.controller.errorMessage != null) {
-            AppToast.show(
-              context,
-              widget.controller.errorMessage!,
-              isError: true,
-            );
           }
           return ok;
         },
       ),
-    );
+    ).whenComplete(() {
+      if (mounted && widget.controller.allWarehouses.isNotEmpty) {
+        widget.controller.clearError();
+      }
+    });
   }
 
   void _openEditWarehouseSheet(WarehouseItem warehouse) {
+    widget.controller.clearError();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => AddEditWarehouseSheet(
         warehouse: warehouse,
+        errorMessage: () => widget.controller.errorMessage,
         onSave: ({
           required name,
           required address,
@@ -117,17 +119,15 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
               context,
               widget.controller.successMessage ?? 'Warehouse updated successfully.',
             );
-          } else if (mounted && widget.controller.errorMessage != null) {
-            AppToast.show(
-              context,
-              widget.controller.errorMessage!,
-              isError: true,
-            );
           }
           return ok;
         },
       ),
-    );
+    ).whenComplete(() {
+      if (mounted && widget.controller.allWarehouses.isNotEmpty) {
+        widget.controller.clearError();
+      }
+    });
   }
 
   Future<void> _confirmDeleteWarehouse(WarehouseItem warehouse) async {
@@ -336,20 +336,27 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     ),
                   ),
 
-                  // Filter Chips Row
+                  // Filter Chips Row (single-line clean fit)
                   SliverToBoxAdapter(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            _buildFilterChip('all', 'All Locations (${widget.controller.totalWarehousesCount})'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('active', 'Active (${widget.controller.activeWarehousesCount})'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('near_full', 'Near/Over Full (${widget.controller.nearFullCount})'),
-                          ],
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _buildFilterChip('all', 'All Locations (${widget.controller.totalWarehousesCount})'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('active', 'Active (${widget.controller.activeWarehousesCount})'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('inactive', 'Inactive (${widget.controller.inactiveWarehousesCount})'),
+                              const SizedBox(width: 6),
+                              _buildFilterChip('near_full', 'Near/Over Full (${widget.controller.nearFullCount})'),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -398,9 +405,10 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
                     SliverFillRemaining(
                       hasScrollBody: false,
                       child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
                           child: Column(
+                            mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Container(
@@ -531,6 +539,8 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
       backgroundColor: AppColors.surface,
       selectedColor: AppColors.canopyLight.withValues(alpha: 0.3),
       checkmarkColor: AppColors.canopyDeep,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      visualDensity: VisualDensity.compact,
       labelStyle: TextStyle(
         color: isSelected ? AppColors.canopyDeep : AppColors.textMuted,
         fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
@@ -542,7 +552,7 @@ class _WarehouseScreenState extends State<WarehouseScreen> {
           color: isSelected ? AppColors.canopy : AppColors.line,
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
     );
   }
 }

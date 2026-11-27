@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 
 import '../../domain/entities/audit_log_item.dart';
 import '../../domain/entities/audit_log_pagination.dart';
@@ -14,8 +15,7 @@ import 'event_log_remote_data_source.dart';
 /// Verified endpoint (live OpenAPI, re-verified 2026-09-28):
 /// - `GET /api/v1/admin/audit-logs` → PaginatedResponse[AuditLogPublic]
 class FastApiEventLogRemoteDataSource implements EventLogRemoteDataSource {
-  static const String defaultBaseUrl =
-      'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

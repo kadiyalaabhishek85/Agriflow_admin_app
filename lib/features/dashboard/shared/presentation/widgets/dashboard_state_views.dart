@@ -191,46 +191,50 @@ class DashboardEmptyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: AppColors.line.withValues(alpha: 0.5),
-                shape: BoxShape.circle,
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: AppColors.line.withValues(alpha: 0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.inbox_outlined,
+                  size: 26,
+                  color: AppColors.textMuted,
+                ),
               ),
-              child: const Icon(
-                Icons.inbox_outlined,
-                size: 28,
-                color: AppColors.textMuted,
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: AppTypography.titleSmall().copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              title,
-              style: AppTypography.titleSmall().copyWith(
-                fontWeight: FontWeight.w700,
+              const SizedBox(height: 6),
+              Text(
+                message,
+                style: AppTypography.bodySmall(color: AppColors.textMuted),
+                textAlign: TextAlign.center,
               ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              style: AppTypography.bodySmall(color: AppColors.textMuted),
-              textAlign: TextAlign.center,
-            ),
-            if (onRefresh != null) ...[
-              const SizedBox(height: 18),
-              TextButton.icon(
-                onPressed: onRefresh,
-                icon: const Icon(Icons.refresh_rounded, size: 16),
-                label: const Text('Refresh'),
-              ),
+              if (onRefresh != null) ...[
+                const SizedBox(height: 14),
+                TextButton.icon(
+                  onPressed: onRefresh,
+                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  label: const Text('Refresh'),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

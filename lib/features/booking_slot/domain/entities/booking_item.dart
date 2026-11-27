@@ -53,6 +53,7 @@ class BookingItem {
       quantityKg: double.tryParse((json['quantity_kg'] ?? '0').toString()) ?? 0.0,
       status: (json['status'] ?? 'pending').toString().toLowerCase(),
       notes: json['notes']?.toString(),
+      enrichedSlotTime: json['slot_time']?.toString(),
     );
   }
 

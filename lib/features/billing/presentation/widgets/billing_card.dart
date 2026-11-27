@@ -137,20 +137,26 @@ class BillingCard extends StatelessWidget {
                                 color: isCredit ? AppColors.good : AppColors.bad,
                               ),
                               const SizedBox(width: 3),
-                              Text(
-                                isCredit ? 'Credit • ' : 'Debit • ',
-                                style: GoogleFonts.manrope(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: isCredit ? AppColors.good : AppColors.bad,
-                                ),
-                              ),
-                              Flexible(
-                                child: Text(
-                                  item.shortDate,
-                                  style: GoogleFonts.manrope(
-                                    fontSize: 11.5,
-                                    color: AppColors.textFaint,
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: isCredit ? 'Credit • ' : 'Debit • ',
+                                        style: GoogleFonts.manrope(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w600,
+                                          color: isCredit ? AppColors.good : AppColors.bad,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: item.shortDate,
+                                        style: GoogleFonts.manrope(
+                                          fontSize: 11.5,
+                                          color: AppColors.textFaint,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,

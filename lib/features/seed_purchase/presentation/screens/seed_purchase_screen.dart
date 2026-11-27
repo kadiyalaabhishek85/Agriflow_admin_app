@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:agriflow_admin/core/constants/app_colors.dart';
 import 'package:agriflow_admin/core/constants/app_typography.dart';
@@ -24,6 +25,7 @@ class SeedPurchaseScreen extends StatefulWidget {
 class _SeedPurchaseScreenState extends State<SeedPurchaseScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
 
 
   @override
@@ -39,10 +41,22 @@ class _SeedPurchaseScreenState extends State<SeedPurchaseScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged(String val) {
+    setState(() {});
+    widget.controller.previewSearch(val);
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        widget.controller.setSearch(val);
+      }
+    });
   }
 
   void _onScroll() {
@@ -218,7 +232,12 @@ class _SeedPurchaseScreenState extends State<SeedPurchaseScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: TextField(
         controller: _searchController,
-        onSubmitted: (val) => widget.controller.setSearch(val),
+        textInputAction: TextInputAction.search,
+        onChanged: _onSearchChanged,
+        onSubmitted: (val) {
+          _searchDebounce?.cancel();
+          widget.controller.setSearch(val);
+        },
         decoration: InputDecoration(
           hintText: 'Search by farmer, seed or invoice...',
           hintStyle: AppTypography.bodySmall(color: AppColors.textMuted),
@@ -227,7 +246,9 @@ class _SeedPurchaseScreenState extends State<SeedPurchaseScreen> {
               ? IconButton(
                   icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textMuted),
                   onPressed: () {
+                    _searchDebounce?.cancel();
                     _searchController.clear();
+                    setState(() {});
                     widget.controller.setSearch('');
                   },
                 )
@@ -262,40 +283,51 @@ class _SeedPurchaseScreenState extends State<SeedPurchaseScreen> {
 
     final active = widget.controller.activeFilter;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: filters.map((f) {
-          final isSelected = active == f.$1;
-          final totalCount = isSelected ? widget.controller.pagination.total : null;
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: filters.asMap().entries.map((entry) {
+              final f = entry.value;
+              final isLast = entry.key == filters.length - 1;
+              final isSelected = active == f.$1;
+              final totalCount = widget.controller.countForFilter(f.$1);
 
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(
-                totalCount != null && totalCount > 0 ? '${f.$2} ($totalCount)' : f.$2,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : AppColors.text,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                  fontSize: 13,
+              return Padding(
+                padding: EdgeInsets.only(right: isLast ? 0 : 6),
+                child: FilterChip(
+                  label: Text(
+                    totalCount != null ? '${f.$2} ($totalCount)' : f.$2,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : AppColors.text,
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  selected: isSelected,
+                  onSelected: (_) => widget.controller.setFilter(f.$1),
+                  backgroundColor: AppColors.surface,
+                  selectedColor: AppColors.canopy,
+                  side: BorderSide(
+                    color: isSelected ? AppColors.canopy : AppColors.line,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  showCheckmark: false,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                  labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+                  visualDensity: VisualDensity.compact,
                 ),
-              ),
-              selected: isSelected,
-              onSelected: (_) => widget.controller.setFilter(f.$1),
-              backgroundColor: AppColors.surface,
-              selectedColor: AppColors.canopy,
-              side: BorderSide(
-                color: isSelected ? AppColors.canopy : AppColors.line,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(100),
-              ),
-              showCheckmark: false,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            ),
-          );
-        }).toList(),
+              );
+            }).toList(),
+          ),
+        ),
       ),
     );
   }

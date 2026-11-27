@@ -8,6 +8,7 @@ import '../../../../core/widgets/sheet_drag_handle.dart';
 /// Modal bottom sheet for creating or updating a warehouse facility (Admin only).
 class AddEditWarehouseSheet extends StatefulWidget {
   final WarehouseItem? warehouse;
+  final String? Function()? errorMessage;
   final Future<bool> Function({
     required String name,
     required String address,
@@ -21,6 +22,7 @@ class AddEditWarehouseSheet extends StatefulWidget {
   const AddEditWarehouseSheet({
     super.key,
     this.warehouse,
+    this.errorMessage,
     required this.onSave,
   });
 
@@ -40,6 +42,7 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
   String? _nameError;
   String? _addressError;
   String? _capacityError;
+  String? _serverError;
 
   bool get isEditing => widget.warehouse != null;
 
@@ -73,6 +76,7 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
       _nameError = null;
       _addressError = null;
       _capacityError = null;
+      _serverError = null;
 
       final name = _nameController.text.trim();
       if (name.length < 2) {
@@ -106,7 +110,10 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
     final qtl = double.parse(_capacityQtlController.text.trim());
     final totalCapacityKg = qtl * 100.0; // 1 Qtl = 100 Kg
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _serverError = null;
+    });
 
     final success = await widget.onSave(
       name: _nameController.text.trim(),
@@ -118,7 +125,13 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
     );
 
     if (mounted) {
-      setState(() => _isSubmitting = false);
+      setState(() {
+        _isSubmitting = false;
+        if (!success) {
+          _serverError = widget.errorMessage?.call() ??
+              'Failed to save warehouse details. Please try again.';
+        }
+      });
       if (success) {
         Navigator.of(context).pop();
       }
@@ -127,51 +140,60 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Drag handle
-            SheetDragHandle(margin: const EdgeInsets.only(bottom: 16)),
-
-            // Title and Subtitle
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.9;
+    return Material(
+      color: AppColors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 16,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                // Drag handle
+                SheetDragHandle(margin: const EdgeInsets.only(bottom: 16)),
+
+                // Title and Subtitle
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      isEditing ? 'Edit Warehouse' : 'Add Warehouse',
-                      style: AppTypography.titleMedium(
-                        color: AppColors.text,
-                      ).copyWith(fontWeight: FontWeight.w800),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isEditing ? 'Edit Warehouse' : 'Add Warehouse',
+                            style: AppTypography.titleMedium(
+                              color: AppColors.text,
+                            ).copyWith(fontWeight: FontWeight.w800),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Enter warehouse facility details below',
+                            style: AppTypography.caption(color: AppColors.textMuted),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Enter warehouse facility details below',
-                      style: AppTypography.caption(color: AppColors.textMuted),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: AppColors.textMuted),
+                      onPressed: () => Navigator.of(context).pop(),
                     ),
                   ],
                 ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: AppColors.textMuted),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
             const SizedBox(height: 18),
 
             // Warehouse Name
@@ -243,6 +265,31 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
               ),
             ],
 
+            if (_serverError != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.badBg,
+                  borderRadius: BorderRadius.circular(AppColors.radiusSm),
+                  border: Border.all(color: AppColors.bad.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: AppColors.bad),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _serverError!,
+                        style: AppTypography.caption(color: AppColors.bad),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             const SizedBox(height: 24),
 
             // Action Buttons
@@ -299,6 +346,8 @@ class _AddEditWarehouseSheetState extends State<AddEditWarehouseSheet> {
           ],
         ),
       ),
+    ),
+    ),
     );
   }
 }

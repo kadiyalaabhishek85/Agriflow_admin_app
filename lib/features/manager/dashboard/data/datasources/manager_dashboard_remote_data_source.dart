@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:agriflow_admin/core/network/api_client.dart';
 import 'package:agriflow_admin/features/auth/domain/entities/auth_exception.dart';
 import 'package:agriflow_admin/features/dashboard/shared/presentation/widgets/dashboard_mandi_strip.dart';
 import 'package:agriflow_admin/features/manager/dashboard/domain/entities/manager_dashboard_data.dart';
@@ -11,7 +12,7 @@ abstract class ManagerDashboardRemoteDataSource {
 }
 
 class FastApiManagerDashboardRemoteDataSource implements ManagerDashboardRemoteDataSource {
-  static const String defaultBaseUrl = 'https://agriflow-backend-t8o4.onrender.com';
+  static const String defaultBaseUrl = ApiClient.defaultBaseUrl;
   static const String apiPrefix = '/api/v1';
 
   final String baseUrl;

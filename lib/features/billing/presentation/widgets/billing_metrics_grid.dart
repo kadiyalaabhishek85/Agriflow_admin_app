@@ -18,12 +18,12 @@ class BillingMetricsGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isNarrow = constraints.maxWidth < 360;
-        final cardWidth = isNarrow ? constraints.maxWidth : (constraints.maxWidth - 12) / 2;
+        final isNarrow = constraints.maxWidth < 260;
+        final cardWidth = isNarrow ? constraints.maxWidth : (constraints.maxWidth - 10) / 2;
 
         return Wrap(
-          spacing: 12,
-          runSpacing: 12,
+          spacing: 10,
+          runSpacing: 10,
           children: [
             SizedBox(
               width: cardWidth,
@@ -96,7 +96,7 @@ class _MetricCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
@@ -141,16 +141,19 @@ class _MetricCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: GoogleFonts.manrope(
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: AppColors.text,
+          const SizedBox(height: 6),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: GoogleFonts.manrope(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: AppColors.text,
+              ),
+              maxLines: 1,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(

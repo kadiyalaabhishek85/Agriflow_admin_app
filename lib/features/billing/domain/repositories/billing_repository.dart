@@ -20,6 +20,16 @@ abstract class BillingRepository {
     String? order,
   });
 
+  /// Creates a manual billing/transaction entry via POST /api/v1/transactions.
+  Future<BillingTransactionItem> createTransaction({
+    required String accessToken,
+    required String farmerId,
+    required double amount,
+    required String direction,
+    required String referenceType,
+    String? description,
+  });
+
   /// Settles payment for a pending transaction via PATCH /api/v1/transactions/{id}/pay.
   Future<BillingTransactionItem> payTransaction({
     required String accessToken,

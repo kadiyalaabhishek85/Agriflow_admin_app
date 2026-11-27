@@ -8,6 +8,8 @@ import '../../../../core/widgets/sheet_drag_handle.dart';
 class AddInventorySheet extends StatefulWidget {
   final String warehouseId;
   final String warehouseName;
+  final double? availableCapacityKg;
+  final String? Function()? errorMessage;
   final Future<bool> Function({
     required String warehouseId,
     required String grainType,
@@ -18,6 +20,8 @@ class AddInventorySheet extends StatefulWidget {
     super.key,
     required this.warehouseId,
     required this.warehouseName,
+    this.availableCapacityKg,
+    this.errorMessage,
     required this.onAdd,
   });
 
@@ -33,6 +37,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
 
   String? _customTypeError;
   String? _quantityError;
+  String? _serverError;
 
   final List<String> _commonGrainTypes = const [
     'Rice',
@@ -56,6 +61,7 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
     setState(() {
       _customTypeError = null;
       _quantityError = null;
+      _serverError = null;
 
       if (_selectedGrainType == 'Other Seeds') {
         final custom = _customTypeController.text.trim();
@@ -69,6 +75,12 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
       final qtl = double.tryParse(qtlText);
       if (qtl == null || qtl <= 0) {
         _quantityError = 'Enter a valid positive quantity in Quintals.';
+        valid = false;
+      } else if (widget.availableCapacityKg != null &&
+          qtl * 100.0 > widget.availableCapacityKg! + 0.01) {
+        final availQtl = (widget.availableCapacityKg! / 100.0).clamp(0.0, double.infinity);
+        _quantityError =
+            'Exceeds available warehouse space (${availQtl.toStringAsFixed(1)} Qtl available).';
         valid = false;
       }
     });
@@ -86,7 +98,10 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
 
     final quantityKg = qtl * 100.0; // 1 Qtl = 100 Kg
 
-    setState(() => _isSubmitting = true);
+    setState(() {
+      _isSubmitting = true;
+      _serverError = null;
+    });
 
     final success = await widget.onAdd(
       warehouseId: widget.warehouseId,
@@ -95,7 +110,13 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
     );
 
     if (mounted) {
-      setState(() => _isSubmitting = false);
+      setState(() {
+        _isSubmitting = false;
+        if (!success) {
+          _serverError = widget.errorMessage?.call() ??
+              'Failed to add grain stock. Please try again.';
+        }
+      });
       if (success) {
         Navigator.of(context).pop();
       }
@@ -104,18 +125,21 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: SingleChildScrollView(
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.9;
+    return Material(
+      color: AppColors.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(AppColors.radiusLg)),
+      clipBehavior: Clip.antiAlias,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 16,
+            bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
+          ),
+          child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,12 +235,39 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
             // Quantity in Quintals
             AppTextField(
               label: 'Quantity (Quintals) *',
-              hint: 'e.g. 50 (equivalent to 5,000 kg)',
+              hint: widget.availableCapacityKg != null
+                  ? 'Max ${(widget.availableCapacityKg! / 100.0).clamp(0.0, double.infinity).toStringAsFixed(1)} Qtl available'
+                  : 'e.g. 50 (equivalent to 5,000 kg)',
               controller: _quantityQtlController,
               errorText: _quantityError,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               enabled: !_isSubmitting,
             ),
+
+            if (_serverError != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.badBg,
+                  borderRadius: BorderRadius.circular(AppColors.radiusSm),
+                  border: Border.all(color: AppColors.bad.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, size: 16, color: AppColors.bad),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _serverError!,
+                        style: AppTypography.caption(color: AppColors.bad),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 24),
 
@@ -274,6 +325,8 @@ class _AddInventorySheetState extends State<AddInventorySheet> {
           ],
         ),
       ),
+    ),
+    ),
     );
   }
 }

@@ -1,6 +1,5 @@
 import '../../../booking_slot/data/datasources/booking_remote_data_source.dart';
 import '../../../booking_slot/domain/entities/booking_exception.dart';
-import '../../domain/entities/grain_sale_exception.dart';
 import '../../domain/entities/grain_sale_item.dart';
 import '../../domain/entities/grain_sale_pagination.dart';
 import '../../domain/repositories/grain_sale_repository.dart';
@@ -113,8 +112,9 @@ class GrainSaleRepositoryImpl implements GrainSaleRepository {
   }
 
   /// Resolves the real booking slot id for a sale by joining `GET /bookings`
-  /// rows on `grain_sale_id`; never falls back to the sale id.
-  Future<String> _resolveBookingSlotId({
+  /// rows on `grain_sale_id`, returning `null` when a sale was logged directly
+  /// without a warehouse booking slot.
+  Future<String?> _resolveBookingSlotId({
     required String accessToken,
     required String saleId,
   }) async {
@@ -122,7 +122,7 @@ class GrainSaleRepositoryImpl implements GrainSaleRepository {
       try {
         var page = 1;
         var totalPages = 1;
-        while (page <= totalPages) {
+        while (page <= totalPages && page <= 10) {
           final result = await bookingDataSource.getBookings(
             accessToken: accessToken,
             page: page,
@@ -136,18 +136,13 @@ class GrainSaleRepositoryImpl implements GrainSaleRepository {
           totalPages = result.pagination.totalPages;
           page++;
         }
-      } on BookingException catch (e) {
-        throw GrainSaleException(
-          message: e.message,
-          statusCode: e.statusCode,
-          isNetworkError: e.isNetworkError,
-        );
+      } on BookingException {
+        return null;
+      } catch (_) {
+        return null;
       }
     }
-    throw const GrainSaleException(
-      message:
-          'This grain sale is not associated with a booking slot and cannot be reviewed yet.',
-    );
+    return null;
   }
 
   @override
@@ -231,5 +226,41 @@ class GrainSaleRepositoryImpl implements GrainSaleRepository {
       );
     }
     return item;
+  }
+
+  /// Fetches lightweight (`pageSize: 1`) total counts for each grain sale status chip.
+  Future<Map<String, int>> getStatusCounts({
+    required String accessToken,
+    String? search,
+    Map<String, int> seedKnown = const {},
+  }) async {
+    const statuses = ['all', 'pending', 'received', 'approved', 'rejected', 'paid'];
+    final result = Map<String, int>.from(seedKnown);
+    final pendingStatuses = statuses.where((s) => !result.containsKey(s)).toList();
+    if (pendingStatuses.isEmpty) return result;
+
+    final entries = await Future.wait(
+      pendingStatuses.map((status) async {
+        try {
+          final res = await remoteDataSource.getGrainSales(
+            accessToken: accessToken,
+            page: 1,
+            pageSize: 1,
+            search: (search == null || search.trim().isEmpty) ? null : search.trim(),
+            status: status == 'all' ? null : status,
+          );
+          return MapEntry<String, int?>(status, res.pagination.total);
+        } catch (_) {
+          return MapEntry<String, int?>(status, null);
+        }
+      }),
+    );
+
+    for (final entry in entries) {
+      if (entry.value != null) {
+        result[entry.key] = entry.value!;
+      }
+    }
+    return result;
   }
 }
